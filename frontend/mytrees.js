@@ -65,6 +65,26 @@
 
     MyTreesEngine.TreeNode = TreeNode;
 
+    /**
+     * Rebuilds a TreeNode from the structured dict produced by the Python
+     * backend's TreeNode.to_dict(). Unlike re-parsing Newick, this preserves
+     * internal-node metadata such as bootstrap support. The backend field
+     * `length` maps to this engine's `branchLength`.
+     */
+    MyTreesEngine.dictToTreeNode = function dictToTreeNode(d) {
+        if (!d) return null;
+        const len = (d.length !== undefined && d.length !== null) ? d.length : null;
+        const node = new TreeNode(d.name ? d.name : null, len);
+        node.metadata = d.metadata ? JSON.parse(JSON.stringify(d.metadata)) : {};
+        if (Array.isArray(d.children)) {
+            for (const childDict of d.children) {
+                const child = dictToTreeNode(childDict);
+                if (child) node.addChild(child);
+            }
+        }
+        return node;
+    };
+
     // ─── Distance Models ─────────────────────────────────────────────────────────
 
     function getBaseFrequencies(seqs) {
@@ -400,36 +420,30 @@
     };
 
     MyTreesEngine.parsePHYLIPMatrix = function(text) {
-        const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+        // Aceita PHYLIP (espaços) e CSV (vírgulas), com linha de contagem e/ou
+        // cabeçalho de colunas opcionais.
+        const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
         if (lines.length === 0) return { taxa: [], matrix: [] };
-        
-        const n = parseInt(lines[0].split(/\s+/)[0]);
-        if (isNaN(n)) return { taxa: [], matrix: [] };
+
+        const tok = l => l.replace(/[;,\t]+/g, ' ').trim().split(/\s+/);
+        const isInt = s => /^\d+$/.test(s);
+        const isNum = s => s !== '' && !isNaN(Number(s));
+
+        let start = 0;
+        const first = tok(lines[0]);
+        if (first.length === 1 && isInt(first[0])) {
+            start = 1; // linha de contagem PHYLIP
+        } else if (first.length > 1 && first.every(s => !isNum(s))) {
+            start = 1; // cabeçalho com nomes de colunas (ex.: CSV ",A,B,C")
+        }
 
         const taxa = [];
         const matrix = [];
-
-        for (let i = 1; i < lines.length; i++) {
-            const parts = lines[i].split(/\s+/);
-            if (parts.length === 0) continue;
-            const taxonName = parts[0];
-            const distances = parts.slice(1).map(Number).filter(x => !isNaN(x));
-
-            // If continuation lines exist:
-            let j = i + 1;
-            while (distances.length < n && j < lines.length) {
-                const nextParts = lines[j].split(/\s+/);
-                // Check if next row is a taxon name or just numbers
-                if (isNaN(Number(nextParts[0]))) {
-                    break; // new row starting
-                }
-                distances.push(...nextParts.map(Number).filter(x => !isNaN(x)));
-                i = j;
-                j++;
-            }
-
-            taxa.push(taxonName);
-            matrix.push(distances.slice(0, n));
+        for (let i = start; i < lines.length; i++) {
+            const parts = tok(lines[i]);
+            if (parts.length < 2) continue;
+            taxa.push(parts[0]);
+            matrix.push(parts.slice(1).map(Number).filter(x => !isNaN(x)));
         }
 
         return { taxa, matrix };

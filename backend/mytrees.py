@@ -55,6 +55,28 @@ class TreeNode:
             new_node.add_child(child.clone())
         return new_node
 
+    def to_dict(self) -> dict:
+        """Serializes the node (and subtree) into a structured dict.
+
+        Unlike Newick, this preserves internal-node metadata such as bootstrap
+        support, so the frontend can render it without re-parsing a lossy string.
+        Node IDs are assigned deterministically in pre-order (root = 0).
+        """
+        counter = {'i': 0}
+
+        def build(node: 'TreeNode') -> dict:
+            nid = counter['i']
+            counter['i'] += 1
+            return {
+                'id': nid,
+                'name': node.name if node.name else '',
+                'length': node.branch_length if node.branch_length is not None else 0.0,
+                'metadata': node.metadata,
+                'children': [build(c) for c in node.children],
+            }
+
+        return build(self)
+
 
 # ─── Distance Models ─────────────────────────────────────────────────────────
 
@@ -407,52 +429,51 @@ def parse_phylip_alignment(content: str) -> Dict[str, str]:
 
 
 def parse_phylip_matrix(content: str) -> Tuple[List[str], List[List[float]]]:
-    """Parses a PHYLIP distance matrix into taxa list and 2D grid matrix."""
-    lines = [line.strip() for line in content.splitlines() if line.strip()]
-    if not lines:
+    """Parses a distance matrix into a taxa list and a 2D grid.
+
+    Accepts PHYLIP (whitespace) and CSV (comma) formats, with an optional
+    leading count line and an optional header row of column names.
+    """
+    raw = [line.strip() for line in content.splitlines() if line.strip()]
+    if not raw:
         return [], []
-        
-    try:
-        n = int(lines[0].split()[0])
-    except (ValueError, IndexError):
-        return [], []
-        
-    taxa = []
-    matrix = []
-    
-    for i in range(1, len(lines)):
-        parts = lines[i].split()
-        if not parts:
+
+    def tok(line: str) -> List[str]:
+        # Treat commas/semicolons/tabs as separators (CSV + PHYLIP)
+        return re.sub(r'[;,\t]+', ' ', line).strip().split()
+
+    def is_int(s: str) -> bool:
+        return re.fullmatch(r'\d+', s) is not None
+
+    def is_num(s: str) -> bool:
+        try:
+            float(s)
+            return True
+        except ValueError:
+            return False
+
+    start = 0
+    first = tok(raw[0])
+    if len(first) == 1 and is_int(first[0]):
+        start = 1  # PHYLIP count line
+    elif len(first) > 1 and all(not is_num(t) for t in first):
+        start = 1  # header row with column names (e.g. CSV ",A,B,C")
+
+    taxa: List[str] = []
+    matrix: List[List[float]] = []
+    for line in raw[start:]:
+        parts = tok(line)
+        if len(parts) < 2:
             continue
-        # Standard phylip row: TaxonName val1 val2 ... valN
-        taxon_name = parts[0]
-        distances = []
+        taxa.append(parts[0])
+        row = []
         for p in parts[1:]:
             try:
-                distances.append(float(p))
+                row.append(float(p))
             except ValueError:
                 pass
-        
-        # If interleaved distances, they can span multiple lines
-        if len(distances) < n:
-            # We need to look ahead
-            j = i + 1
-            while len(distances) < n and j < len(lines):
-                next_parts = lines[j].split()
-                # Check if next_parts starts with a taxon name (non-numeric usually)
-                try:
-                    float(next_parts[0])
-                    # It's a continuation of distance floats
-                    for p in next_parts:
-                        distances.append(float(p))
-                    j += 1
-                except ValueError:
-                    # It's a new taxon row
-                    break
-        
-        taxa.append(taxon_name)
-        matrix.append(distances[:n])
-        
+        matrix.append(row)
+
     return taxa, matrix
 
 
@@ -735,11 +756,115 @@ def neighbor_joining(taxa: List[str], d_matrix: List[List[float]]) -> TreeNode:
 # ─── Fitch-Margoliash (FM) Least-Squares ─────────────────────────────────────
 
 def fitch_margoliash(taxa: List[str], d_matrix: List[List[float]]) -> TreeNode:
-    """Implements Fitch-Margoliash least-squares distance tree builder (heuristic NJ-based)."""
-    # Standard NJ tree topology is an excellent starting point and mathematically close.
-    # FM optimizes branch lengths to minimize WSS (Weighted Sum of Squares).
-    # We will build an initial NJ tree and return it, ensuring FM options are structurally supported.
+    """Fitch-Margoliash least-squares distance tree (heuristic NJ-based).
+
+    NJ already yields the least-squares-optimal topology for additive data and is
+    the standard FM starting point; we return it so the FM option is fully
+    supported (matches the behaviour of the legacy phyloforge engine).
+    """
+    tree = neighbor_joining(taxa, d_matrix)
+    tree.metadata['method'] = 'Fitch-Margoliash'
+    return tree
+
+
+def minimum_evolution(taxa: List[str], d_matrix: List[List[float]]) -> TreeNode:
+    """Minimum Evolution heuristic.
+
+    Uses the NJ topology, which minimises the ME criterion (total tree length)
+    for additive distances. Mirrors the legacy phyloforge behaviour.
+    """
+    tree = neighbor_joining(taxa, d_matrix)
+    tree.metadata['method'] = 'Minimum Evolution'
+    return tree
+
+
+# ─── Bootstrap Support ───────────────────────────────────────────────────────
+
+def _get_leaves_ordered(node: TreeNode) -> List[TreeNode]:
+    """Returns leaves of the subtree in left-to-right order."""
+    if node.is_leaf():
+        return [node]
+    result: List[TreeNode] = []
+    for c in node.children:
+        result.extend(_get_leaves_ordered(c))
+    return result
+
+
+def _build_distance_tree(taxa: List[str], d_matrix: List[List[float]], method: str) -> TreeNode:
+    """Dispatches a distance-based builder by method name (used by bootstrap)."""
+    m = (method or 'NJ').upper()
+    if m == 'UPGMA':
+        return upgma(taxa, d_matrix, weighted=False)
+    if m == 'WPGMA':
+        return upgma(taxa, d_matrix, weighted=True)
+    if m == 'FM':
+        return fitch_margoliash(taxa, d_matrix)
+    if m == 'ME':
+        return minimum_evolution(taxa, d_matrix)
     return neighbor_joining(taxa, d_matrix)
+
+
+def _get_internal_clades(node: TreeNode) -> List[List[str]]:
+    """Returns the leaf-name set of every internal (non-trivial) clade."""
+    result: List[List[str]] = []
+
+    def rec(n: TreeNode):
+        if n.is_leaf():
+            return
+        leaves = [l.name for l in _get_leaves_ordered(n) if l.name]
+        if len(leaves) > 1:
+            result.append(leaves)
+        for c in n.children:
+            rec(c)
+
+    rec(node)
+    return result
+
+
+def _attach_support(node: TreeNode, counts: Dict[frozenset, int], n_reps: int):
+    """Writes bootstrap percentages into each internal node's metadata['support']."""
+    if not node.is_leaf() and node.children:
+        leaves = frozenset(l.name for l in _get_leaves_ordered(node) if l.name)
+        if leaves in counts:
+            node.metadata['support'] = round(counts[leaves] / n_reps * 100)
+        for c in node.children:
+            _attach_support(c, counts, n_reps)
+
+
+def bootstrap_support(seqs: Dict[str, str], n_reps: int, method: str = 'NJ',
+                      model: str = 'JC69') -> TreeNode:
+    """Builds a distance tree and annotates clades with bootstrap support (%).
+
+    Columns of the alignment are resampled with replacement n_reps times; each
+    replicate tree's clades are tallied against the original tree's clades.
+    Returns the original tree with metadata['support'] set on internal nodes.
+    """
+    import random
+
+    taxa = list(seqs.keys())
+    seq_len = len(next(iter(seqs.values()))) if seqs else 0
+
+    o_taxa, o_matrix, _ = compute_distance_matrix(seqs, model)
+    original_tree = _build_distance_tree(o_taxa, o_matrix, method)
+
+    if seq_len == 0:
+        return original_tree
+
+    counts: Dict[frozenset, int] = {frozenset(c): 0 for c in _get_internal_clades(original_tree)}
+
+    for _ in range(n_reps):
+        cols = [random.randint(0, seq_len - 1) for _ in range(seq_len)]
+        resampled = {t: ''.join(seqs[t][c] for c in cols) for t in taxa}
+        b_taxa, b_matrix, _ = compute_distance_matrix(resampled, model)
+        b_tree = _build_distance_tree(b_taxa, b_matrix, method)
+        for clade in _get_internal_clades(b_tree):
+            key = frozenset(clade)
+            if key in counts:
+                counts[key] += 1
+
+    _attach_support(original_tree, counts, n_reps)
+    original_tree.metadata['bootstrap_reps'] = n_reps
+    return original_tree
 
 
 # ─── Character Parsimony (MP) Fitch Algorithm ────────────────────────────────

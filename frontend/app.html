@@ -1,0 +1,1769 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MyTrees — Análise & Edição Filogenética</title>
+    <!-- Served at /app: resolve relative asset URLs against the site root -->
+    <base href="/">
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Poppins:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Custom Style Sheet -->
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body class="view-workspace">
+
+    <!-- ─── Premium Application Header ──────────────────────────────────────── -->
+    <header>
+        <div class="header-brand">
+            <a href="/" aria-label="Voltar à página inicial">
+                <img src="assets/logo.png" alt="MyTrees" style="height:48px;width:auto;display:block;">
+            </a>
+        </div>
+
+        <!-- Top-level view tabs -->
+        <nav class="view-tabs" id="view-tabs">
+            <button class="view-tab active" data-view="workspace" onclick="switchView('workspace', this)">Árvore</button>
+            <button class="view-tab" data-view="matriz" onclick="switchView('matriz', this)">Matriz</button>
+            <button class="view-tab" data-view="estatisticas" onclick="switchView('estatisticas', this)">Estatísticas</button>
+        </nav>
+
+        <!-- Authenticated user area (hidden until logged in) -->
+        <div id="user-area" class="user-area" style="display:none;">
+            <span id="user-name" class="user-name"></span>
+            <button class="btn btn-secondary btn-sm btn-auto" type="button" onclick="showDocs()">Documentação</button>
+            <button class="btn btn-secondary btn-sm btn-auto" type="button" onclick="window.location.href='/'">Início</button>
+            <button id="logout-btn" class="btn btn-secondary btn-sm btn-auto" type="button">Sair</button>
+        </div>
+    </header>
+
+    <!-- ─── Authentication Overlay ──────────────────────────────────────────── -->
+    <div id="auth-overlay" class="auth-overlay" style="display:none;">
+        <div class="auth-card">
+            <div class="auth-brand">
+                <h2 class="logo-font">My<span style="color:var(--accent-teal);">Trees</span></h2>
+                <p class="auth-subtitle">Análise Filogenética</p>
+            </div>
+
+            <div class="auth-tabs">
+                <button type="button" class="auth-tab active" data-tab="login">Entrar</button>
+                <button type="button" class="auth-tab" data-tab="register">Criar conta</button>
+            </div>
+
+            <div id="auth-error" class="auth-error" style="display:none;"></div>
+
+            <!-- Login form -->
+            <form id="login-form" class="auth-form">
+                <div class="form-group">
+                    <label for="login-identifier">Usuário ou e-mail</label>
+                    <input id="login-identifier" name="identifier" type="text" autocomplete="username" required>
+                </div>
+                <div class="form-group">
+                    <label for="login-password">Senha</label>
+                    <input id="login-password" name="password" type="password" autocomplete="current-password" required>
+                </div>
+                <label class="auth-remember">
+                    <input id="login-remember" type="checkbox"> Manter conectado
+                </label>
+                <button type="submit" class="btn btn-primary btn-fit">Entrar</button>
+            </form>
+
+            <!-- Register form -->
+            <form id="register-form" class="auth-form" style="display:none;">
+                <div class="form-group">
+                    <label for="register-username">Nome de usuário</label>
+                    <input id="register-username" name="username" type="text" autocomplete="username" required>
+                </div>
+                <div class="form-group">
+                    <label for="register-email">E-mail</label>
+                    <input id="register-email" name="email" type="email" autocomplete="email" required>
+                </div>
+                <div class="form-group">
+                    <label for="register-password">Senha (mín. 8 caracteres)</label>
+                    <input id="register-password" name="password" type="password" autocomplete="new-password" required>
+                </div>
+                <div class="form-group">
+                    <label for="register-password2">Confirmar senha</label>
+                    <input id="register-password2" name="password2" type="password" autocomplete="new-password" required>
+                </div>
+                <button type="submit" class="btn btn-primary btn-fit">Criar conta</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- ─── Workspace Grid ──────────────────────────────────────────────────── -->
+    <main>
+        <!-- Sidebar Controls -->
+        <section class="sidebar">
+            
+            <!-- Accordion Section 1: Data Input -->
+            <div class="accordion-section active">
+                <button class="accordion-header" onclick="toggleAccordion(this)">
+                    <span>Entrada de Dados</span>
+                    <svg class="accordion-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </button>
+                <div class="accordion-content">
+
+                    <!-- Drag and Drop Zone -->
+                    <div class="file-drag-zone" id="drop-zone">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="17 8 12 3 7 8"></polyline>
+                            <line x1="12" y1="3" x2="12" y2="15"></line>
+                        </svg>
+                        <span>Solte arquivos FASTA / PHYLIP / CSV / NWK</span>
+                        <input type="file" id="file-input" style="display: none;" accept=".fasta,.fas,.fa,.phy,.phylip,.csv,.txt,.nwk">
+                    </div>
+
+                    <!-- Text Area Copy Paste input -->
+                    <div class="form-group">
+                        <label for="raw-input">Conteúdo do Arquivo (FASTA, PHYLIP, NEWICK)</label>
+                        <textarea id="raw-input" placeholder="Cole suas sequências alinhadas em formato FASTA ou PHYLIP, ou insira uma árvore em Newick para começar..."></textarea>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Accordion Section 2: Phylogenetic Settings -->
+            <div class="accordion-section active">
+                <button class="accordion-header" onclick="toggleAccordion(this)">
+                    <span>Métodos &amp; Modelos</span>
+                    <svg class="accordion-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </button>
+                <div class="accordion-content">
+
+                    <!-- Distance model selector -->
+                    <div class="form-group" id="group-model">
+                        <label for="distance-model">Modelo de Distância Evolutiva</label>
+                        <select id="distance-model">
+                            <option value="JC69">Jukes-Cantor (JC69)</option>
+                            <option value="K2P" selected>Kimura 2-Parâmetros (K2P)</option>
+                            <option value="F84">Felsenstein 1984 (F84)</option>
+                            <option value="LogDet">LogDet / Distância Paralinear</option>
+                            <option value="p-distance">p-distância (Proporção Pura)</option>
+                        </select>
+                        <span class="input-helper">Frequências e transições calculadas empiricamente.</span>
+                    </div>
+
+                    <!-- Reconstruction method selector -->
+                    <div class="form-group" id="group-method">
+                        <label for="reconstruct-method">Método de Reconstrução</label>
+                        <select id="reconstruct-method">
+                            <option value="NJ" selected>Neighbor Joining (NJ) - Agrupamento Livre</option>
+                            <option value="UPGMA">UPGMA (Agrupamento Ultramétrico)</option>
+                            <option value="WPGMA">WPGMA (Ultramétrico Ponderado)</option>
+                            <option value="FM">Fitch-Margoliash (Mínimos Quadrados)</option>
+                            <option value="ME">Evolução Mínima (ME)</option>
+                            <option value="MP">Máxima Parsimônia (Heurística Fitch)</option>
+                            <option value="ML">Máxima Verossimilhança (Likelihood JC69)</option>
+                        </select>
+                        <span class="input-helper">ML otimiza comprimentos de ramos por otimização heurística.</span>
+                    </div>
+
+                    <!-- Bootstrap replicates -->
+                    <div class="form-group" id="group-bootstrap">
+                        <label for="bootstrap-reps">Réplicas de Bootstrap</label>
+                        <select id="bootstrap-reps">
+                            <option value="0" selected>Sem bootstrap</option>
+                            <option value="100">100 réplicas</option>
+                            <option value="500">500 réplicas</option>
+                            <option value="1000">1000 réplicas</option>
+                        </select>
+                        <span class="input-helper">Suporte estatístico dos ramos (apenas métodos de distância: NJ/UPGMA/WPGMA/FM/ME, requer servidor).</span>
+                    </div>
+
+                    <!-- Build button -->
+                    <button class="btn btn-primary" id="build-btn" onclick="buildPhylogeny()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22V14"/><path d="M12 14L7 8"/><path d="M12 14L17 8"/><path d="M7 8L5 5"/><path d="M7 8L9 5"/><path d="M17 8L15 5"/><path d="M17 8L19 5"/></svg>
+                        Construir Árvore
+                    </button>
+                </div>
+            </div>
+
+        </section>
+
+        <!-- Center Main Dashboard Viewport -->
+        <section class="viewport-container">
+            
+            <!-- Floating Navigation & Layout Toolbar -->
+            <div class="toolbar">
+                
+                <!-- Layout topologes switcher -->
+                <div class="toolbar-group">
+                    <span class="toolbar-label">Topologia:</span>
+                    <button class="tool-btn active" id="btn-layout-rect-phy" title="Filograma Retangular" onclick="changeTreeLayout('rectangular-phylogram', this)">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M3 3v18h18"></path>
+                            <path d="M3 9h8v6h10"></path>
+                            <path d="M11 9v6"></path>
+                        </svg>
+                    </button>
+                    <button class="tool-btn" id="btn-layout-rect-clad" title="Cladograma Retangular" onclick="changeTreeLayout('rectangular-cladogram', this)">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M3 3v18h18"></path>
+                            <line x1="3" y1="9" x2="12" y2="9"></line>
+                            <line x1="12" y1="5" x2="12" y2="17"></line>
+                            <line x1="12" y1="5" x2="21" y2="5"></line>
+                            <line x1="12" y1="17" x2="21" y2="17"></line>
+                        </svg>
+                    </button>
+                    <button class="tool-btn" id="btn-layout-circ-phy" title="Filograma Circular" onclick="changeTreeLayout('circular-phylogram', this)">
+                        <!-- Circular Visual Icon -->
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10" stroke-dasharray="3 3"></circle>
+                            <line x1="12" y1="12" x2="20" y2="8"></line>
+                            <line x1="12" y1="12" x2="6" y2="16"></line>
+                            <circle cx="12" cy="12" r="1.5" fill="currentColor"></circle>
+                        </svg>
+                    </button>
+                    <button class="tool-btn" id="btn-layout-circ-clad" title="Cladograma Circular" onclick="changeTreeLayout('circular-cladogram', this)">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10" stroke-dasharray="2 4"></circle>
+                            <line x1="12" y1="12" x2="18" y2="18"></line>
+                            <line x1="12" y1="12" x2="12" y2="4"></line>
+                            <line x1="12" y1="12" x2="4" y2="12"></line>
+                            <circle cx="12" cy="12" r="1.5" fill="currentColor"></circle>
+                        </svg>
+                    </button>
+                </div>
+
+                <div class="toolbar-divider"></div>
+
+                <!-- Scaling controls -->
+                <div class="toolbar-group">
+                    <span class="toolbar-label">Escala X:</span>
+                    <div class="slider-container">
+                        <input type="range" id="scale-x" min="0.1" max="3.0" step="0.1" value="1.0" oninput="updateScales()">
+                        <span class="slider-val" id="val-scale-x">1.0</span>
+                    </div>
+                    <span class="toolbar-label" style="margin-left: 8px;">Escala Y:</span>
+                    <div class="slider-container">
+                        <input type="range" id="scale-y" min="0.1" max="3.0" step="0.1" value="1.0" oninput="updateScales()">
+                        <span class="slider-val" id="val-scale-y">1.0</span>
+                    </div>
+                </div>
+
+                <div class="toolbar-divider"></div>
+
+                <!-- Scientific Actions -->
+                <div class="toolbar-group">
+                    <button class="btn btn-secondary btn-sm" id="undo-btn" title="Desfazer última alteração (Ctrl+Z)" onclick="undoLastChange()" disabled>
+                        ↶ Desfazer
+                    </button>
+                    <button class="btn btn-secondary btn-sm" title="Reenraizar pelo ponto médio" onclick="triggerMidpointRoot()">
+                        Ponto Médio
+                    </button>
+                    <button class="btn btn-accent btn-sm" onclick="showExportModal()">
+                        Exportar
+                    </button>
+                    <button class="btn btn-secondary btn-sm" id="custom-toggle-btn" onclick="toggleCustomPanel()">
+                        Customização ▾
+                    </button>
+                </div>
+
+            </div>
+
+            <!-- SVG Workspace Canvas -->
+            <div class="svg-workspace" id="canvas-area">
+                <div id="empty-state" class="empty-state">
+                    <svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 22V14"/><path d="M12 14L7 8"/><path d="M12 14L17 8"/><path d="M7 8L5 5"/><path d="M7 8L9 5"/><path d="M17 8L15 5"/><path d="M17 8L19 5"/>
+                    </svg>
+                    <p>Carregue um arquivo ou cole seus dados<br>(FASTA, PHYLIP ou Newick) e clique em <strong>Construir Árvore</strong>.</p>
+                </div>
+                <svg id="tree-svg"></svg>
+            </div>
+
+        </section>
+
+        <!-- Right Properties Panel -->
+        <aside class="properties-panel">
+
+            <!-- Accordion: Aparência (fundo) -->
+            <div class="accordion-section active">
+                <button class="accordion-header" onclick="toggleAccordion(this)">
+                    <span>Aparência</span>
+                    <svg class="accordion-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </button>
+                <div class="accordion-content">
+                    <div class="form-row label-config-row">
+                        <div class="form-group">
+                            <label>Cor de Fundo</label>
+                            <input type="color" id="bg-color" value="#ffffff" oninput="setBackgroundColor(this.value)" class="color-input-block">
+                        </div>
+                    </div>
+                    <span class="input-helper">O fundo é incluído na imagem SVG exportada.</span>
+                    <button class="btn btn-secondary btn-sm btn-fit" style="margin-top: 12px;" onclick="resetCustomization()">Restaurar estilo padrão</button>
+                </div>
+            </div>
+
+            <!-- Accordion Section 3: Labels Settings -->
+            <div class="accordion-section active">
+                <button class="accordion-header" onclick="toggleAccordion(this)">
+                    <span>Configurações de Rótulos</span>
+                    <svg class="accordion-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </button>
+                <div class="accordion-content">
+                    
+                    <!-- Leaf labels toggle and style -->
+                    <div class="form-group label-config-section">
+                        <div class="style-grid-row">
+                            <label class="label-taxa">Nomes dos Táxons</label>
+                            <input type="checkbox" id="toggle-taxa" checked oninput="updateLabelConfig()">
+                        </div>
+                        <div class="form-row label-config-row">
+                            <div class="form-group">
+                                <label>Fonte</label>
+                                <select id="taxa-font" oninput="updateLabelConfig()">
+                                    <option value="Inter">Inter (Sans)</option>
+                                    <option value="IBM Plex Mono">Plex Mono</option>
+                                    <option value="Arial">Arial</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Cor</label>
+                                <input type="color" id="taxa-color" value="#0f4c64" oninput="updateLabelConfig()" class="color-input-block">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Bootstrap Labels toggle and style -->
+                    <div class="form-group label-config-section">
+                        <div class="style-grid-row">
+                            <label class="label-bootstrap">Valores de Bootstrap</label>
+                            <input type="checkbox" id="toggle-bootstrap" oninput="updateLabelConfig()">
+                        </div>
+                        <div class="form-row label-config-row">
+                            <div class="form-group">
+                                <label>Tamanho</label>
+                                <input type="number" id="bootstrap-size" value="10" min="6" max="24" oninput="updateLabelConfig()">
+                            </div>
+                            <div class="form-group">
+                                <label>Cor</label>
+                                <input type="color" id="bootstrap-color" value="#2b9e9e" oninput="updateLabelConfig()" class="color-input-block">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Branch length Labels toggle and style -->
+                    <div class="form-group">
+                        <div class="style-grid-row">
+                            <label class="label-branch">Comprimento do Ramo</label>
+                            <input type="checkbox" id="toggle-branch-len" oninput="updateLabelConfig()">
+                        </div>
+                        <div class="form-row label-config-row">
+                            <div class="form-group">
+                                <label>Tamanho</label>
+                                <input type="number" id="branch-len-size" value="9" min="6" max="20" oninput="updateLabelConfig()">
+                            </div>
+                            <div class="form-group">
+                                <label>Cor</label>
+                                <input type="color" id="branch-len-color" value="#5b7083" oninput="updateLabelConfig()" class="color-input-block">
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- Accordion Section 4: Tree Aesthetics (FigTree style) -->
+            <div class="accordion-section active" id="figtree-panel">
+                <button class="accordion-header" onclick="toggleAccordion(this)">
+                    <span>Estilo &amp; Ações</span>
+                    <svg class="accordion-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </button>
+                <div class="accordion-content">
+                    
+                    <!-- Actions section -->
+                    <div class="stylist-section">
+                        <span class="stylist-section-title" style="display:block; margin-bottom:8px;">Ações Científicas</span>
+                        <div class="style-grid-row stylist-actions-wrap">
+                            <button class="stylist-action-btn" onclick="triggerRotate()" title="Inverter ordem dos nós filhos">
+                                Inverter Ramo
+                            </button>
+                            <button class="stylist-action-btn" onclick="triggerCollapse()" title="Colapsar clado sob forma triangular">
+                                Colapsar Clado
+                            </button>
+                            <button class="stylist-action-btn" id="btn-reroot-branch" onclick="triggerReroot()" title="Reenraizar árvore na base deste ramo">
+                                Reenraizar
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Aesthetics Stroke styling section -->
+                    <div class="stylist-section" style="margin-top: 16px;">
+                        <span class="stylist-section-title" style="display:block; margin-bottom:8px;">Estética do Ramo Selecionado</span>
+                        
+                        <div class="style-grid-row">
+                            <label>Cor do Traço</label>
+                            <div class="color-picker-wrapper">
+                                <input type="color" id="branch-color-input" onchange="updateSelectedBranchStyle()">
+                            </div>
+                        </div>
+
+                        <div class="style-grid-row" style="margin-top: 8px;">
+                            <label>Espessura</label>
+                            <input type="number" id="branch-width-input" min="1" max="10" step="0.5" value="2" onchange="updateSelectedBranchStyle()" class="input-compact">
+                        </div>
+
+                        <div class="style-grid-row" style="margin-top: 8px;">
+                            <label>Estilo da Linha</label>
+                            <select id="branch-style-input" onchange="updateSelectedBranchStyle()" class="select-compact">
+                                <option value="none">Sólido</option>
+                                <option value="5,5">Tracejado</option>
+                                <option value="2,3">Pontilhado</option>
+                            </select>
+                        </div>
+
+                        <button class="btn btn-secondary btn-sm btn-fit" style="margin-top: 12px;" onclick="applyStyleToSelectedClade()">Aplicar ao clado inteiro</button>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- Accordion: Nós & Escala -->
+            <div class="accordion-section active">
+                <button class="accordion-header" onclick="toggleAccordion(this)">
+                    <span>Nós &amp; Escala</span>
+                    <svg class="accordion-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </button>
+                <div class="accordion-content">
+                    <div class="style-grid-row">
+                        <label>Marcar pontas</label>
+                        <input type="checkbox" id="toggle-tips" oninput="updateNodeMarkers()">
+                    </div>
+                    <div class="form-row label-config-row">
+                        <div class="form-group">
+                            <label>Forma</label>
+                            <select id="tip-shape" onchange="updateNodeMarkers()">
+                                <option value="circle">Círculo</option>
+                                <option value="square">Quadrado</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Cor</label>
+                            <input type="color" id="tip-color" value="#0f4c64" oninput="updateNodeMarkers()" class="color-input-block">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Tamanho do marcador</label>
+                        <input type="number" id="tip-size" min="2" max="12" step="1" value="4" oninput="updateNodeMarkers()" class="input-compact">
+                    </div>
+                    <div class="style-grid-row" style="margin-top: 6px;">
+                        <label>Barra de escala</label>
+                        <input type="checkbox" id="toggle-scalebar" oninput="updateScaleBar()">
+                    </div>
+                    <span class="input-helper">A barra de escala aparece em filogramas (topologia retangular) e entra no export.</span>
+                </div>
+            </div>
+
+        </aside>
+    </main>
+
+    <!-- Export Modal -->
+    <div class="modal-overlay" id="export-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">Exportar Resultados</h3>
+                <button class="stylist-close" onclick="closeExportModal()">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Imagem da árvore</label>
+                    <span class="input-helper">SVG é vetorial (amplia sem perder qualidade); PNG é uma imagem com o fundo atual.</span>
+                    <div class="export-btn-row">
+                        <button class="btn btn-accent btn-sm" onclick="downloadSVGTree()">SVG (vetor)</button>
+                        <button class="btn btn-accent btn-sm" onclick="exportPNG()">PNG</button>
+                    </div>
+                </div>
+                <div class="form-group modal-section-gap">
+                    <label>Árvore (texto)</label>
+                    <div class="export-btn-row">
+                        <button class="btn btn-secondary btn-sm" onclick="exportNewickFile()">Newick (.nwk)</button>
+                        <button class="btn btn-secondary btn-sm" onclick="exportNexusTree()">NEXUS (.nex)</button>
+                    </div>
+                    <textarea id="output-newick-text" readonly class="textarea-compact" style="margin-top:10px;"></textarea>
+                    <button class="btn btn-secondary btn-sm btn-fit" onclick="copyNewickText()">Copiar Newick</button>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary btn-auto" onclick="closeExportModal()">Fechar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Load Local Modules and Orchestration Script -->
+    <script src="mytrees.js"></script>
+    <script src="visualization.js"></script>
+    <script src="auth.js"></script>
+    
+    <!-- ─── Core Orchestrator Script ──────────────────────────────────────── -->
+    <script>
+        // Server integration ping check. Relative path keeps requests same-origin
+        // so the session cookie is sent and there is no CORS dependency.
+        const API_URL = '/api';
+        let serverActive = false;
+
+        async function checkServerConnection() {
+            try {
+                const response = await fetch(`${API_URL}/test`, { method: 'GET', mode: 'cors' });
+                serverActive = response.ok;
+            } catch (e) {
+                serverActive = false;
+            }
+        }
+
+        // Accordion collapsible trigger
+        function toggleAccordion(button) {
+            const section = button.parentElement;
+            section.classList.toggle('active');
+        }
+
+        // Tab switcher for bottom stats drawer
+        function switchDrawerTab(tabId, button) {
+            document.querySelectorAll('.drawer-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.drawer-tab-content').forEach(c => c.classList.remove('active'));
+            
+            button.classList.add('active');
+            document.getElementById(tabId).classList.add('active');
+        }
+
+        // Input type selection controller
+        // Auto-detecta o tipo de entrada pelo conteudo (FASTA, PHYLIP,
+        // matriz de distancias ou Newick). Nao ha mais seletor manual.
+        function detectInputType(text) {
+            const t = (text || '').trim();
+            if (!t) return 'alignment';
+            if (t[0] === '>') return 'alignment';
+            if (t[0] === '(') return 'newick';
+            const lines = t.split(/\r?\n/);
+            const hasCommas = lines.slice(0, 3).some(l => l.includes(','));
+            const tok = s => s.replace(/[;,\t]+/g, ' ').trim().split(/\s+/);
+            const first = tok(lines[0]);
+            if (first.length === 1 && /^\d+$/.test(first[0])) return 'matrix';
+            if (first.length === 2 && /^\d+$/.test(first[0]) && /^\d+$/.test(first[1])) return 'alignment';
+            if (hasCommas) return 'matrix';   // CSV => matriz de distancias
+            const second = tok(lines[1] || '');
+            const numericCols = second.slice(1).filter(x => x !== '' && !isNaN(Number(x))).length;
+            if (numericCols >= 2 && numericCols >= second.length - 2) return 'matrix';
+            return 'alignment';
+        }
+
+
+        // File Drag and Drop handlers
+        const dropZone = document.getElementById('drop-zone');
+        
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.style.borderColor = 'var(--accent-cyan)';
+            dropZone.style.background = 'rgba(34, 211, 238, 0.02)';
+        });
+        
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.style.borderColor = 'var(--border-medium)';
+            dropZone.style.background = 'transparent';
+        });
+        
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.style.borderColor = 'var(--border-medium)';
+            dropZone.style.background = 'transparent';
+            
+            if (e.dataTransfer.files.length > 0) {
+                handleUploadedFile(e.dataTransfer.files[0]);
+            }
+        });
+        
+        dropZone.addEventListener('click', () => {
+            document.getElementById('file-input').click();
+        });
+        
+        document.getElementById('file-input').addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleUploadedFile(e.target.files[0]);
+            }
+        });
+
+        function handleUploadedFile(file) {
+            const reader = new FileReader();
+            reader.onload = function(evt) {
+                // O tipo de entrada e detectado automaticamente ao construir.
+                document.getElementById('raw-input').value = evt.target.result;
+            };
+            reader.readAsText(file);
+        }
+
+        // Scale controllers
+        function updateScales() {
+            const w = parseFloat(document.getElementById('scale-x').value);
+            const h = parseFloat(document.getElementById('scale-y').value);
+            
+            document.getElementById('val-scale-x').textContent = w.toFixed(2);
+            document.getElementById('val-scale-y').textContent = h.toFixed(2);
+            
+            window.MyTreesViz.widthScale = w;
+            window.MyTreesViz.heightScale = h;
+            
+            const svg = document.getElementById('tree-svg');
+            if (svg) window.MyTreesViz.render(svg);
+        }
+
+        function updateLabelConfig() {
+            const config = window.MyTreesViz.labelsConfig;
+            config.showTaxa = document.getElementById('toggle-taxa').checked;
+            config.taxaFont = document.getElementById('taxa-font').value;
+            config.taxaColor = document.getElementById('taxa-color').value;
+            
+            config.showBootstrap = document.getElementById('toggle-bootstrap').checked;
+            config.bootstrapSize = parseInt(document.getElementById('bootstrap-size').value);
+            config.bootstrapColor = document.getElementById('bootstrap-color').value;
+            
+            config.showBranchLength = document.getElementById('toggle-branch-len').checked;
+            config.branchLengthSize = parseInt(document.getElementById('branch-len-size').value);
+            config.branchLengthColor = document.getElementById('branch-len-color').value;
+            
+            const svg = document.getElementById('tree-svg');
+            if (svg) window.MyTreesViz.render(svg);
+        }
+
+        function changeTreeLayout(layoutMode, btn) {
+            document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            
+            window.MyTreesViz.layout = layoutMode;
+            
+            const svg = document.getElementById('tree-svg');
+            if (svg) window.MyTreesViz.render(svg);
+        }
+
+        // Callback trigger for Rerooting, rotating and collapsing
+        function triggerRotate() {
+            const node = window.MyTreesViz.selectedNode;
+            if (!node) { alert('Selecione um ramo na árvore primeiro (clique nele).'); return; }
+            if (node) {
+                pushUndo();
+                const ok = window.MyTreesViz.rotateNode(node);
+                if (ok) {
+                    const svg = document.getElementById('tree-svg');
+                    window.MyTreesViz.render(svg);
+                }
+            }
+        }
+
+        function triggerCollapse() {
+            const node = window.MyTreesViz.selectedNode;
+            if (!node) { alert('Selecione um ramo na árvore primeiro (clique nele).'); return; }
+            if (node) {
+                pushUndo();
+                const ok = window.MyTreesViz.toggleCollapseClade(node);
+                if (ok) {
+                    const svg = document.getElementById('tree-svg');
+                    window.MyTreesViz.render(svg);
+                    
+                    // Update collapse button state
+                    const btn = document.querySelector('.stylist-action-btn:nth-child(2)');
+                    btn.textContent = window.MyTreesViz.collapsedNodes.has(node) ? 'Expandir Clado' : 'Colapsar Clado';
+                }
+            }
+        }
+
+        function triggerReroot() {
+            const node = window.MyTreesViz.selectedNode;
+            if (!node) { alert('Selecione um ramo na árvore primeiro (clique nele).'); return; }
+            if (node) {
+                pushUndo();
+                const ok = window.MyTreesViz.rerootAtNode(node);
+                if (ok) {
+                    const svg = document.getElementById('tree-svg');
+                    window.MyTreesViz.render(svg);
+                    closeStylistPanel();
+                    updatePostCalculatedStats();
+                }
+            }
+        }
+
+        function triggerMidpointRoot() {
+            if (window.MyTreesViz.tree) {
+                pushUndo();
+                const ok = window.MyTreesViz.midpointRoot();
+                if (ok) {
+                    const svg = document.getElementById('tree-svg');
+                    window.MyTreesViz.render(svg);
+                    updatePostCalculatedStats();
+                }
+            }
+        }
+
+        // Branch aesthetic updates
+        function updateSelectedBranchStyle() {
+            const node = window.MyTreesViz.selectedNode;
+            if (node) {
+                pushUndo();
+                const color = document.getElementById('branch-color-input').value;
+                const width = parseFloat(document.getElementById('branch-width-input').value);
+                const dash = document.getElementById('branch-style-input').value;
+                
+                window.MyTreesViz.updateNodeStyle(node.id, {
+                    stroke: color,
+                    strokeWidth: width,
+                    strokeDasharray: dash
+                });
+            }
+        }
+
+        function rerenderTree() {
+            const svg = document.getElementById('tree-svg');
+            if (svg && window.MyTreesViz.tree) window.MyTreesViz.render(svg);
+        }
+
+        function updateNodeMarkers() {
+            const tm = window.MyTreesViz.tipMarkers;
+            tm.show = document.getElementById('toggle-tips').checked;
+            tm.shape = document.getElementById('tip-shape').value;
+            tm.color = document.getElementById('tip-color').value;
+            tm.size = parseFloat(document.getElementById('tip-size').value) || 4;
+            rerenderTree();
+        }
+
+        function updateScaleBar() {
+            window.MyTreesViz.showScaleBar = document.getElementById('toggle-scalebar').checked;
+            rerenderTree();
+        }
+
+        function applyStyleToSelectedClade() {
+            const node = window.MyTreesViz.selectedNode;
+            if (!node) { alert('Selecione um ramo na árvore primeiro (clique nele).'); return; }
+            pushUndo();
+            window.MyTreesViz.applyStyleToClade(node, {
+                stroke: document.getElementById('branch-color-input').value,
+                strokeWidth: parseFloat(document.getElementById('branch-width-input').value),
+                strokeDasharray: document.getElementById('branch-style-input').value
+            });
+        }
+
+        // ─── Floating Panel Visibility Trigger ─────────────────────────────────
+        window.MyTreesViz.onNodeSelectedCallback = function(node) {
+            const panel = document.getElementById('figtree-panel');
+            if (panel) panel.style.display = 'block';   // keep the actions panel always visible
+            if (!node) return;
+
+            // Toggle Reroot base branch option (cannot reroot at the absolute root branch)
+            const rerootBtn = document.getElementById('btn-reroot-branch');
+            if (!node.parent) {
+                rerootBtn.style.opacity = '0.4';
+                rerootBtn.style.pointerEvents = 'none';
+            } else {
+                rerootBtn.style.opacity = '1';
+                rerootBtn.style.pointerEvents = 'auto';
+            }
+            
+            // Set toggle text for collapse/expand
+            const collapseBtn = document.querySelector('.stylist-action-btn:nth-child(2)');
+            if (node.children.length === 0) {
+                collapseBtn.style.opacity = '0.4';
+                collapseBtn.style.pointerEvents = 'none';
+                collapseBtn.textContent = 'Colapsar Clado';
+            } else {
+                collapseBtn.style.opacity = '1';
+                collapseBtn.style.pointerEvents = 'auto';
+                collapseBtn.textContent = window.MyTreesViz.collapsedNodes.has(node) ? 'Expandir Clado' : 'Colapsar Clado';
+            }
+
+            // Fill active style values in form inputs
+            const style = window.MyTreesViz.nodeStyles.get(node.id) || {
+                stroke: '#0f4c64',
+                strokeWidth: 2,
+                strokeDasharray: 'none'
+            };
+            
+            document.getElementById('branch-color-input').value = style.stroke.startsWith('#') ? style.stroke : '#0f4c64';
+            document.getElementById('branch-width-input').value = style.strokeWidth;
+            document.getElementById('branch-style-input').value = style.strokeDasharray;
+        };
+
+        function closeStylistPanel() {
+            window.MyTreesViz.selectNode(null);
+        }
+
+        // ─── Asynchronous Core calculation pipeline ──────────────────────────
+        async function buildPhylogeny() {
+            const rawText = document.getElementById('raw-input').value.trim();
+            if (!rawText) {
+                alert('Carregue dados biológicos alinhados ou uma string Newick antes de prosseguir.');
+                return;
+            }
+
+            const emptyState = document.getElementById('empty-state');
+            if (emptyState) emptyState.style.display = 'none';
+            pushUndo();
+
+            const buildBtn = document.getElementById('build-btn');
+            buildBtn.disabled = true;
+            buildBtn.innerHTML = 'Processando...';
+
+            const inputType = detectInputType(rawText);
+            const method = document.getElementById('reconstruct-method').value;
+            const model = document.getElementById('distance-model').value;
+            const bootstrap = parseInt(document.getElementById('bootstrap-reps').value, 10) || 0;
+
+            try {
+                if (inputType === 'newick') {
+                    // Directly parse Newick tree
+                    let tree;
+                    if (serverActive) {
+                        // Backend can parse/validate if desired, but we can do it locally easily
+                        tree = window.MyTreesEngine.parseNewick(rawText);
+                    } else {
+                        tree = window.MyTreesEngine.parseNewick(rawText);
+                    }
+                    
+                    window.MyTreesViz.initTree(tree);
+                    const svg = document.getElementById('tree-svg');
+                    window.MyTreesViz.render(svg);
+                    
+                    // Simple Stats update
+                    updateNewickOnlyStats(tree);
+                    buildBtn.disabled = false;
+                    buildBtn.innerHTML = 'Construir Árvore Filogenética';
+                    return;
+                }
+
+                // Call calculation pipeline
+                let responseData;
+                // When computed locally, keep the actual TreeNode so we can render
+                // it directly (no lossy Newick round-trip that would drop metadata).
+                let clientTree = null;
+
+                if (serverActive) {
+                    // PIPELINE A: Call Python Flask server backend
+                    const payload = {
+                        inputType: inputType,
+                        method: method,
+                        model: model,
+                        bootstrap: bootstrap
+                    };
+                    if (inputType === 'alignment') {
+                        payload.alignmentText = rawText;
+                    } else {
+                        payload.matrixText = rawText;
+                    }
+                    
+                    const response = await fetch(`${API_URL}/build_tree`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    
+                    if (!response.ok) {
+                        const err = await response.json();
+                        throw new Error(err.error || 'Erro interno no cálculo.');
+                    }
+                    responseData = await response.json();
+                    
+                } else {
+                    // PIPELINE B: Run purely client-side local JS engine
+                    let parsedData;
+                    let taxa, matrix, stats;
+                    let newick = "";
+                    let treeObj;
+
+                    if (inputType === 'alignment') {
+                        const isFASTA = rawText.startsWith('>');
+                        const seqs = isFASTA ? window.MyTreesEngine.parseFASTA(rawText) : window.MyTreesEngine.parsePHYLIPAlignment(rawText);
+                        
+                        if (!seqs || Object.keys(seqs).length === 0) {
+                            throw new Error('Falha ao analisar alinhamento. Certifique-se de que os cabeçalhos estão formatados.');
+                        }
+                        
+                        const keys = Object.keys(seqs);
+                        const cleanSeqs = {};
+                        for (const k of keys) {
+                            cleanSeqs[k.trim()] = seqs[k].replace(/\s/g, '').toUpperCase();
+                        }
+
+                        const matrixRes = window.MyTreesEngine.computeDistanceMatrix(cleanSeqs, model);
+                        taxa = matrixRes.taxa;
+                        matrix = matrixRes.matrix;
+                        
+                        // Run builder methods
+                        if (method === 'NJ') {
+                            treeObj = window.MyTreesEngine.neighborJoining(taxa, matrix);
+                        } else if (method === 'UPGMA') {
+                            treeObj = window.MyTreesEngine.upgma(taxa, matrix, false);
+                        } else if (method === 'WPGMA') {
+                            treeObj = window.MyTreesEngine.upgma(taxa, matrix, true);
+                        } else if (method === 'MP') {
+                            treeObj = window.MyTreesEngine.maximumParsimony(cleanSeqs);
+                        } else if (method === 'ML') {
+                            treeObj = window.MyTreesEngine.maximumLikelihood(cleanSeqs, model);
+                        }
+                        
+                        newick = treeObj.toNewick() + ";";
+                        stats = window.MyTreesEngine.treeStats(treeObj);
+                        
+                        // Add matrix stats
+                        stats = { ...stats, ...matrixRes.stats };
+                        // Add base frequencies
+                        const counts = { 'A': 0, 'C': 0, 'G': 0, 'T': 0 };
+                        let tot = 0;
+                        for (const s of Object.values(cleanSeqs)) {
+                            for (let idx = 0; idx < s.length; idx++) {
+                                const c = s[idx].toUpperCase();
+                                if (c in counts) { counts[c]++; tot++; }
+                            }
+                        }
+                        if (tot > 0) {
+                            stats.base_frequencies = {
+                                'A': counts['A'] / tot,
+                                'C': counts['C'] / tot,
+                                'G': counts['G'] / tot,
+                                'T': counts['T'] / tot
+                            };
+                        }
+                        if (treeObj.metadata.log_likelihood !== undefined) {
+                            stats.log_likelihood = treeObj.metadata.log_likelihood;
+                        }
+                        if (treeObj.metadata.parsimony_score !== undefined) {
+                            stats.parsimony_score = treeObj.metadata.parsimony_score;
+                        }
+
+                    } else if (inputType === 'matrix') {
+                        const parsedMat = window.MyTreesEngine.parsePHYLIPMatrix(rawText);
+                        taxa = parsedMat.taxa;
+                        matrix = parsedMat.matrix;
+                        
+                        if (!taxa || taxa.length === 0) {
+                            throw new Error('Matriz PHYLIP vazia ou incorreta.');
+                        }
+                        
+                        let selectMethod = method;
+                        if (method === 'MP' || method === 'ML') {
+                            selectMethod = 'NJ'; // fallback
+                        }
+                        
+                        if (selectMethod === 'NJ') {
+                            treeObj = window.MyTreesEngine.neighborJoining(taxa, matrix);
+                        } else if (selectMethod === 'UPGMA') {
+                            treeObj = window.MyTreesEngine.upgma(taxa, matrix, false);
+                        } else if (selectMethod === 'WPGMA') {
+                            treeObj = window.MyTreesEngine.upgma(taxa, matrix, true);
+                        }
+                        
+                        newick = treeObj.toNewick() + ";";
+                        stats = window.MyTreesEngine.treeStats(treeObj);
+                        stats = { ...stats, ...window.MyTreesEngine.analyzeMatrixStats(taxa, matrix) };
+                    }
+                    
+                    responseData = {
+                        newick: newick,
+                        taxa: taxa,
+                        matrix: matrix,
+                        stats: stats,
+                        method: method,
+                        model: model
+                    };
+                    clientTree = treeObj || null;
+                }
+
+                // Render tree in SVG.
+                // Prefer the structured tree (preserves metadata such as bootstrap
+                // support); fall back to parsing Newick only if it is unavailable.
+                let tree;
+                if (clientTree) {
+                    tree = clientTree;
+                } else if (responseData.tree) {
+                    tree = window.MyTreesEngine.dictToTreeNode(responseData.tree);
+                } else {
+                    tree = window.MyTreesEngine.parseNewick(responseData.newick);
+                }
+                window.MyTreesViz.initTree(tree);
+                const svg = document.getElementById('tree-svg');
+                window.MyTreesViz.render(svg);
+
+                // Update UI panels, Heatmaps and stats cards
+                updateUIElementsWithResults(responseData);
+
+            } catch (err) {
+                alert(`Erro de Processamento: ${err.message}`);
+                console.error(err);
+            } finally {
+                buildBtn.disabled = false;
+                buildBtn.innerHTML = `
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22V14"/><path d="M12 14L7 8"/><path d="M12 14L17 8"/><path d="M7 8L5 5"/><path d="M7 8L9 5"/><path d="M17 8L15 5"/><path d="M17 8L19 5"/></svg>
+                    Construir Árvore
+                `;
+            }
+        }
+
+        // Fill HTML panels and display colored Heatmaps
+        let lastBuildData = null;
+        function updateUIElementsWithResults(data) {
+            lastBuildData = data;
+            // Newick text
+            document.getElementById('output-newick-text').value = data.newick;
+            
+            // Statistics Card parameters
+            document.getElementById('stat-taxa-count').textContent = data.stats.n_taxa || '-';
+            document.getElementById('stat-total-bl').textContent = data.stats.total_branch_length !== undefined ? data.stats.total_branch_length.toFixed(4) : '-';
+            document.getElementById('stat-tree-depth').textContent = data.stats.tree_depth || '-';
+            document.getElementById('stat-run-method').textContent = data.method;
+            document.getElementById('stat-mean-dist').textContent = data.stats.mean_distance !== undefined ? data.stats.mean_distance.toFixed(4) : '-';
+            document.getElementById('stat-triangle-violations').textContent = data.stats.triangle_violations !== undefined ? data.stats.triangle_violations : '0';
+
+            // Show/Hide optimization score cards
+            const divParsimony = document.getElementById('div-parsimony');
+            const divLikelihood = document.getElementById('div-likelihood');
+            
+            if (data.stats.parsimony_score !== undefined) {
+                divParsimony.style.display = 'block';
+                document.getElementById('stat-parsimony-score').textContent = data.stats.parsimony_score;
+            } else {
+                divParsimony.style.display = 'none';
+            }
+
+            if (data.stats.log_likelihood !== undefined) {
+                divLikelihood.style.display = 'block';
+                document.getElementById('stat-likelihood-score').textContent = data.stats.log_likelihood.toFixed(2);
+            } else {
+                divLikelihood.style.display = 'none';
+            }
+
+            // Hide the optimization-scores card entirely when there is nothing to show
+            const evalCard = document.getElementById('card-eval-scores');
+            if (evalCard) evalCard.style.display =
+                (data.stats.parsimony_score !== undefined || data.stats.log_likelihood !== undefined) ? '' : 'none';
+
+            // Fill Nucleotides Base frequencies
+            const freqContainer = document.getElementById('base-freq-visualizer');
+            freqContainer.innerHTML = '';
+            
+            if (data.stats.base_frequencies) {
+                const freqs = data.stats.base_frequencies;
+                for (const base of ['A', 'C', 'G', 'T']) {
+                    const val = freqs[base] || 0.0;
+                    const pct = (val * 100).toFixed(1) + '%';
+                    
+                    const row = document.createElement('div');
+                    row.className = `base-freq-row base-${base}`;
+                    row.innerHTML = `
+                        <span class="base-letter">${base}</span>
+                        <div class="base-freq-bar-outer">
+                            <div class="base-freq-bar-inner" style="width: ${val * 100}%;"></div>
+                        </div>
+                        <span class="base-pct">${pct}</span>
+                    `;
+                    freqContainer.appendChild(row);
+                }
+            } else {
+                freqContainer.innerHTML = '<span style="color: var(--text-muted); font-size: 11px;">Não aplicável a matrizes de distância precomputadas.</span>';
+            }
+
+            // Draw colored Heatmap
+            renderDistanceHeatmap(data.taxa, data.matrix);
+            renderBranchSupport();
+        }
+
+        function renderBranchSupport() {
+            const box = document.getElementById('support-list');
+            if (!box) return;
+            const tree = window.MyTreesViz.tree;
+            const rows = [];
+            if (tree) {
+                (function walk(n) {
+                    if (n.children && n.children.length) {
+                        const sup = n.metadata && (n.metadata.support !== undefined && n.metadata.support !== null
+                            ? n.metadata.support
+                            : (n.metadata.bootstrap !== undefined ? n.metadata.bootstrap : undefined));
+                        if (sup !== undefined && sup !== null) {
+                            let leaves = 0;
+                            (function c(x) { if (!x.children.length) leaves++; else x.children.forEach(c); })(n);
+                            rows.push({ leaves: leaves, sup: Math.round(sup) });
+                        }
+                        n.children.forEach(walk);
+                    }
+                })(tree);
+            }
+            if (!rows.length) {
+                box.innerHTML = '<span class="muted-note">Rode a análise com bootstrap para ver o suporte de cada clado.</span>';
+                return;
+            }
+            rows.sort((a, b) => b.sup - a.sup);
+            box.innerHTML = rows.map(r =>
+                '<div class="support-row"><span class="support-clade">Clado de ' + r.leaves + ' táxons</span>' +
+                '<div class="support-bar"><div style="width:' + r.sup + '%"></div></div>' +
+                '<span class="support-val">' + r.sup + '%</span></div>'
+            ).join('');
+        }
+
+        function askAIInterpretation() {
+            const el = document.getElementById('ai-result');
+            if (el) el.textContent = 'A interpretação por IA ainda não está conectada. Em breve: uma leitura automática do suporte dos ramos, das distâncias e da topologia.';
+        }
+
+        let currentMatrix = null;
+        function renderDistanceHeatmap(taxa, matrix) {
+            const container = document.getElementById('matrix-heatmap-grid');
+            container.innerHTML = '';
+
+            if (!taxa || taxa.length === 0 || !matrix) {
+                container.innerHTML = '<span style="color: var(--text-muted); font-size: 12px; font-style: italic;">Sem dados de matriz.</span>';
+                return;
+            }
+            currentMatrix = { taxa: taxa, matrix: matrix };
+
+            // Find max value to calibrate visual colors
+            let maxVal = 0.00001;
+            for (let i = 0; i < matrix.length; i++) {
+                for (let j = 0; j < matrix[i].length; j++) {
+                    if (matrix[i][j] > maxVal) maxVal = matrix[i][j];
+                }
+            }
+
+            const table = document.createElement('table');
+            table.className = 'matrix-table';
+
+            // Header row
+            const trHeader = document.createElement('tr');
+            trHeader.appendChild(document.createElement('th')); // corner
+            for (const t of taxa) {
+                const th = document.createElement('th');
+                th.textContent = t.length > 8 ? t.substring(0, 7) + '.' : t;
+                th.title = t;
+                trHeader.appendChild(th);
+            }
+            table.appendChild(trHeader);
+
+            // Data rows
+            for (let i = 0; i < taxa.length; i++) {
+                const tr = document.createElement('tr');
+                
+                // Row header
+                const tdLabel = document.createElement('td');
+                tdLabel.className = 'matrix-row-label';
+                tdLabel.textContent = taxa[i];
+                tr.appendChild(tdLabel);
+
+                for (let j = 0; j < taxa.length; j++) {
+                    const td = document.createElement('td');
+                    const val = matrix[i][j];
+                    td.textContent = val.toFixed(4);
+                    
+                    // Color code using Cyan-Blue HSL spectrum:
+                    // 0 is fully transparent/dark, max is bright cyan
+                    const ratio = val / maxVal;
+                    td.style.backgroundColor = `rgba(78, 177, 177, ${ratio * 0.35})`;
+                    td.style.color = 'var(--text-primary)';
+                    
+                    tr.appendChild(td);
+                }
+                table.appendChild(tr);
+            }
+
+            container.appendChild(table);
+        }
+
+        function updateNewickOnlyStats(tree) {
+            const stats = window.MyTreesEngine.treeStats(tree);
+            
+            document.getElementById('output-newick-text').value = tree.toNewick() + ';';
+            document.getElementById('stat-taxa-count').textContent = stats.n_taxa;
+            document.getElementById('stat-total-bl').textContent = stats.total_branch_length.toFixed(4);
+            document.getElementById('stat-tree-depth').textContent = stats.tree_depth;
+            document.getElementById('stat-run-method').textContent = 'Newick (direto)';
+            document.getElementById('stat-mean-dist').textContent = stats.mean_branch_length.toFixed(4);
+            document.getElementById('stat-triangle-violations').textContent = '0';
+            
+            document.getElementById('div-parsimony').style.display = 'none';
+            document.getElementById('div-likelihood').style.display = 'none';
+            document.getElementById('base-freq-visualizer').innerHTML = '<span style="color: var(--text-muted); font-size: 11px;">Rótulos de Árvore somente.</span>';
+            
+            const heatmap = document.getElementById('matrix-heatmap-grid');
+            heatmap.innerHTML = '<span style="color: var(--text-muted); font-size: 12px; font-style: italic;">Dados matriciais indisponíveis ao carregar árvore Newick pura.</span>';
+        }
+
+        function updatePostCalculatedStats() {
+            // Update stats cards when rerooted/midpoint root has mutated the tree structure
+            if (window.MyTreesViz.tree) {
+                const stats = window.MyTreesEngine.treeStats(window.MyTreesViz.tree);
+                document.getElementById('stat-total-bl').textContent = stats.total_branch_length.toFixed(4);
+                document.getElementById('stat-tree-depth').textContent = stats.tree_depth;
+                document.getElementById('output-newick-text').value = window.MyTreesViz.tree.toNewick() + ';';
+            }
+        }
+
+        // Export Actions Modal
+        function showExportModal() {
+            if (!window.MyTreesViz.tree) {
+                alert('Construa uma árvore antes de exportar.');
+                return;
+            }
+            document.getElementById('export-modal').style.display = 'flex';
+        }
+
+        function closeExportModal() {
+            document.getElementById('export-modal').style.display = 'none';
+        }
+
+        function showDocs() { document.getElementById('docs-overlay').style.display = 'flex'; }
+        function closeDocs() { document.getElementById('docs-overlay').style.display = 'none'; }
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closeDocs();
+        });
+
+        function copyNewickText() {
+            const txt = document.getElementById('output-newick-text');
+            txt.select();
+            document.execCommand('copy');
+            alert('Copiado para a área de transferência!');
+        }
+
+        // ─── Export helpers (SVG / PNG / Newick / NEXUS / matriz) ──────────────
+        function downloadTextFile(text, filename) {
+            const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = filename;
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+        function currentNewick() {
+            if (window.MyTreesViz.tree) return window.MyTreesViz.tree.toNewick() + ';';
+            return lastBuildData ? lastBuildData.newick : '';
+        }
+        function exportNewickFile() {
+            if (!window.MyTreesViz.tree) return alert('Construa uma árvore antes de exportar.');
+            downloadTextFile(currentNewick(), 'arvore_mytrees.nwk');
+        }
+        function exportNexusTree() {
+            if (!window.MyTreesViz.tree) return alert('Construa uma árvore antes de exportar.');
+            const taxa = (lastBuildData && lastBuildData.taxa) || [];
+            let nex = '#NEXUS\n\n';
+            if (taxa.length) {
+                nex += 'BEGIN TAXA;\n  DIMENSIONS NTAX=' + taxa.length + ';\n  TAXLABELS ' +
+                       taxa.map(t => t.replace(/\s+/g, '_')).join(' ') + ';\nEND;\n\n';
+            }
+            nex += 'BEGIN TREES;\n  TREE tree1 = ' + currentNewick() + '\nEND;\n';
+            downloadTextFile(nex, 'arvore_mytrees.nex');
+        }
+        function exportPNG() {
+            const svg = document.getElementById('tree-svg');
+            if (!svg || !window.MyTreesViz.tree) return alert('Construa uma árvore antes de exportar.');
+            const w = svg.clientWidth || 1000, h = svg.clientHeight || 700;
+            const sel = window.MyTreesViz.selectedNode;
+            window.MyTreesViz.selectedNode = null;
+            window.MyTreesViz.render(svg);
+            const data = new XMLSerializer().serializeToString(svg);
+            window.MyTreesViz.selectedNode = sel;
+            window.MyTreesViz.render(svg);
+            const img = new Image();
+            img.onload = function () {
+                const scale = 2;
+                const canvas = document.createElement('canvas');
+                canvas.width = w * scale; canvas.height = h * scale;
+                const ctx = canvas.getContext('2d');
+                ctx.scale(scale, scale);
+                ctx.fillStyle = window.MyTreesViz.backgroundColor || '#ffffff';
+                ctx.fillRect(0, 0, w, h);
+                ctx.drawImage(img, 0, 0, w, h);
+                const a = document.createElement('a');
+                a.download = 'arvore_mytrees.png';
+                a.href = canvas.toDataURL('image/png');
+                a.click();
+            };
+            img.onerror = function () { alert('Falha ao gerar o PNG.'); };
+            img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(data)));
+        }
+        // ─── Matriz tab: compute distance / character matrix from input ────────
+        function matrizMsg(t) { const e = document.getElementById('matriz-msg'); if (e) e.textContent = t; }
+        function parseMatrizSeqs(text) {
+            const seqs = text.trim().startsWith('>')
+                ? window.MyTreesEngine.parseFASTA(text)
+                : window.MyTreesEngine.parsePHYLIPAlignment(text);
+            const clean = {};
+            Object.keys(seqs || {}).forEach(k => { if (k.trim()) clean[k.trim()] = (seqs[k] || '').replace(/\s/g, '').toUpperCase(); });
+            return clean;
+        }
+        function computeMatrixView(mode) {
+            const text = document.getElementById('matriz-input').value.trim();
+            if (!text) { matrizMsg('Cole ou suba dados primeiro.'); return; }
+            const type = detectInputType(text);
+            try {
+                if (mode === 'character') {
+                    if (type === 'matrix') { matrizMsg('A matriz de caracteres precisa de sequências (FASTA/PHYLIP).'); return; }
+                    const seqs = parseMatrizSeqs(text);
+                    if (!Object.keys(seqs).length) throw new Error('Nenhuma sequência válida.');
+                    renderCharacterMatrix(seqs);
+                    matrizMsg('Matriz de caracteres: ' + Object.keys(seqs).length + ' táxons.');
+                    return;
+                }
+                let taxa, matrix;
+                if (type === 'matrix') {
+                    const m = window.MyTreesEngine.parsePHYLIPMatrix(text);
+                    taxa = m.taxa; matrix = m.matrix;
+                } else {
+                    const seqs = parseMatrizSeqs(text);
+                    if (!Object.keys(seqs).length) throw new Error('Nenhuma sequência válida.');
+                    const model = document.getElementById('matriz-model').value;
+                    const res = window.MyTreesEngine.computeDistanceMatrix(seqs, model);
+                    taxa = res.taxa; matrix = res.matrix;
+                }
+                if (!taxa || !taxa.length) throw new Error('Nenhum táxon encontrado.');
+                renderDistanceHeatmap(taxa, matrix);
+                matrizMsg('Matriz de distâncias ' + taxa.length + '×' + taxa.length + ' calculada.');
+            } catch (e) {
+                matrizMsg('Erro: ' + e.message);
+            }
+        }
+        function renderCharacterMatrix(seqs) {
+            const container = document.getElementById('matrix-heatmap-grid');
+            container.innerHTML = '';
+            const taxa = Object.keys(seqs);
+            const len = Math.max(0, ...taxa.map(t => seqs[t].length));
+            const colors = { A: 'rgba(43,158,158,0.25)', C: 'rgba(240,108,83,0.25)', G: 'rgba(15,76,100,0.20)', T: 'rgba(251,191,36,0.30)' };
+            const table = document.createElement('table');
+            table.className = 'matrix-table char-matrix';
+            const head = document.createElement('tr');
+            head.appendChild(document.createElement('th'));
+            for (let j = 0; j < len; j++) { const th = document.createElement('th'); th.textContent = j + 1; head.appendChild(th); }
+            table.appendChild(head);
+            taxa.forEach(t => {
+                const tr = document.createElement('tr');
+                const lab = document.createElement('td'); lab.className = 'matrix-row-label'; lab.textContent = t; tr.appendChild(lab);
+                for (let j = 0; j < len; j++) {
+                    const td = document.createElement('td');
+                    const ch = seqs[t][j] || '-';
+                    td.textContent = ch;
+                    if (colors[ch]) td.style.backgroundColor = colors[ch];
+                    tr.appendChild(td);
+                }
+                table.appendChild(tr);
+            });
+            container.appendChild(table);
+        }
+        (function () {
+            const dz = document.getElementById('matriz-drop');
+            const fi = document.getElementById('matriz-file');
+            if (!dz || !fi) return;
+            dz.addEventListener('click', () => fi.click());
+            fi.addEventListener('change', e => { if (e.target.files[0]) loadMatrizFile(e.target.files[0]); });
+            dz.addEventListener('dragover', e => e.preventDefault());
+            dz.addEventListener('drop', e => { e.preventDefault(); if (e.dataTransfer.files[0]) loadMatrizFile(e.dataTransfer.files[0]); });
+        })();
+        function loadMatrizFile(file) {
+            const r = new FileReader();
+            r.onload = ev => { document.getElementById('matriz-input').value = ev.target.result; matrizMsg('Arquivo carregado. Clique em “Calcular matriz”.'); };
+            r.readAsText(file);
+        }
+
+        function exportMatrix(format) {
+            const d = currentMatrix || lastBuildData;
+            if (!d || !d.taxa || !d.matrix || !d.matrix.length) return alert('Nenhuma matriz disponível. Calcule uma matriz primeiro.');
+            const taxa = d.taxa, m = d.matrix;
+            const safe = t => t.replace(/\s+/g, '_');
+            let out = '', fn = '';
+            if (format === 'csv') {
+                out = ',' + taxa.join(',') + '\n' +
+                      taxa.map((t, i) => t + ',' + m[i].map(v => v.toFixed(6)).join(',')).join('\n');
+                fn = 'matriz_mytrees.csv';
+            } else if (format === 'phylip') {
+                out = taxa.length + '\n' +
+                      taxa.map((t, i) => safe(t).padEnd(12) + ' ' + m[i].map(v => v.toFixed(6)).join(' ')).join('\n');
+                fn = 'matriz_mytrees.phy';
+            } else {
+                out = '#NEXUS\n\nBEGIN TAXA;\n  DIMENSIONS NTAX=' + taxa.length + ';\n  TAXLABELS ' +
+                      taxa.map(safe).join(' ') + ';\nEND;\n\n';
+                out += 'BEGIN DISTANCES;\n  FORMAT TRIANGLE=BOTH DIAGONAL;\n  MATRIX\n';
+                out += taxa.map((t, i) => '    ' + safe(t).padEnd(12) + ' ' + m[i].map(v => v.toFixed(6)).join(' ')).join('\n');
+                out += '\n  ;\nEND;\n';
+                fn = 'matriz_mytrees.nex';
+            }
+            downloadTextFile(out, fn);
+        }
+
+        function downloadSVGTree() {
+            const svg = document.getElementById('tree-svg');
+            if (!svg) return;
+            
+            // Clean up selections and overlays to make the export look extremely clean
+            const originalSelection = window.MyTreesViz.selectedNode;
+            window.MyTreesViz.selectedNode = null;
+            window.MyTreesViz.render(svg);
+
+            const serializer = new XMLSerializer();
+            let source = serializer.serializeToString(svg);
+
+            // Add standard XML declaration
+            if (!source.match(/^<svg[^>]+xmlns="http\/\/www\.w3\.org\/2000\/svg"/)) {
+                source = source.replace(/^<svg/, '<svg xmlns="http://www.w3.org/2000/svg"');
+            }
+            if (!source.match(/^<svg[^>]+xmlns\:xlink="http\/\/www\.w3\.org\/1999\/xlink"/)) {
+                source = source.replace(/^<svg/, '<svg xmlns:xlink="http://www.w3.org/1999/xlink"');
+            }
+
+            source = '<?xml version="1.0" encoding="utf-8"?>\n' + source;
+
+            // Trigger actual download in client browser
+            const url = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(source);
+            const downloadLink = document.createElement('a');
+            downloadLink.href = url;
+            downloadLink.download = 'arvore_mytrees.svg';
+            document.body.appendChild(downloadLink);
+            downloadLink.click();
+            document.body.removeChild(downloadLink);
+
+            // Restore selection
+            window.MyTreesViz.selectedNode = originalSelection;
+            window.MyTreesViz.render(svg);
+        }
+
+        // Initialize the workspace once the user is authenticated.
+        let appBootstrapped = false;
+        function startWorkspace() {
+            if (appBootstrapped) return;
+            appBootstrapped = true;
+            checkServerConnection();
+        }
+
+        // Gate the app behind authentication: check the session, then either
+        // start the workspace or show the login/register overlay.
+        window.addEventListener('load', () => {
+            window.MyTreesAuth.init({
+                onAuthenticated: startWorkspace
+            });
+        });
+
+        // ─── View tabs (Workspace / Matriz / Estatisticas / Customizacao) ──────
+        function switchView(view, btn) {
+            const views = ['workspace', 'matriz', 'estatisticas'];
+            views.forEach(v => document.body.classList.remove('view-' + v));
+            document.body.classList.add('view-' + view);
+            document.querySelectorAll('.view-tab').forEach(t => t.classList.toggle('active', t.dataset.view === view));
+            if (view !== 'workspace') closeCustomPanel();
+            if (view === 'workspace') {
+                const svg = document.getElementById('tree-svg');
+                if (svg && window.MyTreesViz.tree) window.MyTreesViz.render(svg);
+            }
+        }
+
+        // ─── Floating customization panel (dropdown) ──────────────────────────
+        function toggleCustomPanel() {
+            const panel = document.querySelector('.properties-panel');
+            if (!panel) return;
+            if (panel.classList.contains('open')) { closeCustomPanel(); return; }
+            // Position the floating panel to line up with the tree canvas
+            const stage = document.getElementById('canvas-area');
+            if (stage) {
+                const r = stage.getBoundingClientRect();
+                panel.style.top = (r.top + 12) + 'px';   // align below the toolbar; CSS handles bottom:16px
+            }
+            panel.classList.add('open');
+            const btn = document.getElementById('custom-toggle-btn');
+            if (btn) btn.classList.add('active');
+        }
+        function closeCustomPanel() {
+            const panel = document.querySelector('.properties-panel');
+            if (panel) panel.classList.remove('open');
+            const btn = document.getElementById('custom-toggle-btn');
+            if (btn) btn.classList.remove('active');
+        }
+
+        // ─── Background colour (also captured by the SVG export) ───────────────
+        function setBackgroundColor(color) {
+            pushUndoCoalesced('bg');
+            window.MyTreesViz.backgroundColor = color;
+            const ws = document.getElementById('canvas-area');
+            if (ws) ws.style.background = color;
+            const svg = document.getElementById('tree-svg');
+            if (svg && window.MyTreesViz.tree) window.MyTreesViz.render(svg);
+        }
+
+        // Restore every customization (style, labels, markers, background, scale) to defaults
+        function resetCustomization() {
+            if (!window.MyTreesViz.tree) return;
+            pushUndo();
+            const V = window.MyTreesViz;
+            V.backgroundColor = '#ffffff';
+            V.nodeStyles.clear();
+            V.tipMarkers = { show: false, shape: 'circle', color: '#0f4c64', size: 4 };
+            V.showScaleBar = false;
+            V.widthScale = 1.0; V.heightScale = 1.0; V.labelSizeScale = 1.0;
+            V.layout = 'rectangular-phylogram';
+            V.selectedNode = null;
+            V.labelsConfig.showTaxa = true;  V.labelsConfig.taxaColor = '#0f4c64'; V.labelsConfig.taxaSize = 12; V.labelsConfig.taxaFont = 'Inter';
+            V.labelsConfig.showBootstrap = false; V.labelsConfig.bootstrapColor = '#2b9e9e'; V.labelsConfig.bootstrapSize = 10;
+            V.labelsConfig.showBranchLength = false; V.labelsConfig.branchLengthColor = '#5b7083'; V.labelsConfig.branchLengthSize = 9;
+
+            const setV = (id, v) => { const e = document.getElementById(id); if (e) e.value = v; };
+            const setC = (id, v) => { const e = document.getElementById(id); if (e) e.checked = v; };
+            setV('bg-color', '#ffffff');
+            setC('toggle-taxa', true); setV('taxa-color', '#0f4c64'); setV('taxa-font', 'Inter');
+            setC('toggle-bootstrap', false); setV('bootstrap-color', '#2b9e9e'); setV('bootstrap-size', '10');
+            setC('toggle-branch-len', false); setV('branch-len-color', '#5b7083'); setV('branch-len-size', '9');
+            setC('toggle-tips', false); setV('tip-shape', 'circle'); setV('tip-color', '#0f4c64'); setV('tip-size', '4');
+            setC('toggle-scalebar', false);
+            setV('scale-x', '1.0'); setV('scale-y', '1.0');
+            const vx = document.getElementById('val-scale-x'); if (vx) vx.textContent = '1.00';
+            const vy = document.getElementById('val-scale-y'); if (vy) vy.textContent = '1.00';
+
+            document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+            const rb = document.getElementById('btn-layout-rect-phy'); if (rb) rb.classList.add('active');
+            const ws = document.getElementById('canvas-area'); if (ws) ws.style.background = '';
+
+            const svg = document.getElementById('tree-svg');
+            if (svg) V.render(svg);
+        }
+
+        // ─── Undo (Ctrl+Z + botao) ─────────────────────────────────────────────
+        const undoStack = [];
+        let _undoCoalesceKey = null, _undoCoalesceTime = 0;
+        function pushUndo() {
+            if (!window.MyTreesViz.tree) return;
+            _undoCoalesceKey = null;   // a discrete action ends any coalescing chain
+            undoStack.push(window.MyTreesViz.snapshot());
+            if (undoStack.length > 60) undoStack.shift();
+            updateUndoBtn();
+        }
+        // For continuous controls (colour picker): snapshot only once per
+        // interaction so undo reverts the whole change, not each intermediate tone.
+        function pushUndoCoalesced(key) {
+            const now = Date.now();
+            if (key && key === _undoCoalesceKey && (now - _undoCoalesceTime) < 1500) {
+                _undoCoalesceTime = now;
+                return;
+            }
+            _undoCoalesceTime = now;
+            if (!window.MyTreesViz.tree) return;
+            undoStack.push(window.MyTreesViz.snapshot());
+            if (undoStack.length > 60) undoStack.shift();
+            updateUndoBtn();
+            _undoCoalesceKey = key;
+        }
+        function updateUndoBtn() {
+            const b = document.getElementById('undo-btn');
+            if (b) b.disabled = undoStack.length === 0;
+        }
+        function undoLastChange() {
+            if (undoStack.length === 0) return;
+            window.MyTreesViz.restore(undoStack.pop());
+            const svg = document.getElementById('tree-svg');
+            if (svg) window.MyTreesViz.render(svg);
+            syncControlsFromViz();
+            updateUndoBtn();
+        }
+        function syncControlsFromViz() {
+            const V = window.MyTreesViz;
+            const sx = document.getElementById('scale-x'), sy = document.getElementById('scale-y');
+            if (sx) { sx.value = V.widthScale; document.getElementById('val-scale-x').textContent = (+V.widthScale).toFixed(2); }
+            if (sy) { sy.value = V.heightScale; document.getElementById('val-scale-y').textContent = (+V.heightScale).toFixed(2); }
+            const bg = document.getElementById('bg-color'); if (bg && V.backgroundColor) bg.value = V.backgroundColor;
+            const tc = document.getElementById('taxa-color'); if (tc) tc.value = V.labelsConfig.taxaColor;
+            const tt = document.getElementById('toggle-taxa'); if (tt) tt.checked = V.labelsConfig.showTaxa;
+            const tb = document.getElementById('toggle-bootstrap'); if (tb) tb.checked = V.labelsConfig.showBootstrap;
+        }
+        document.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
+                const tag = (e.target.tagName || '').toLowerCase();
+                if (tag === 'input' || tag === 'textarea') return;
+                e.preventDefault();
+                undoLastChange();
+            }
+        });
+
+    </script>
+
+    <!-- ─── Full-screen Matriz view ─────────────────────────────────────────── -->
+    <section class="fullscreen-view" id="view-matriz">
+        <div class="fullscreen-inner matriz-wide">
+            <div class="view-head">
+                <h2 class="view-title">Matriz</h2>
+                <div class="export-btn-row">
+                    <span class="export-label">Exportar:</span>
+                    <button class="btn btn-secondary btn-sm" onclick="exportMatrix('csv')">CSV</button>
+                    <button class="btn btn-secondary btn-sm" onclick="exportMatrix('phylip')">PHYLIP</button>
+                    <button class="btn btn-secondary btn-sm" onclick="exportMatrix('nexus')">NEXUS</button>
+                </div>
+            </div>
+            <div class="matriz-layout">
+                <div class="matriz-input card">
+                    <h3 class="matriz-sub">Entrada de dados</h3>
+                    <div class="file-drag-zone" id="matriz-drop">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line>
+                        </svg>
+                        <span>Solte FASTA / PHYLIP / CSV</span>
+                        <input type="file" id="matriz-file" style="display:none" accept=".fasta,.fas,.fa,.phy,.phylip,.csv,.txt">
+                    </div>
+                    <textarea id="matriz-input" placeholder="Cole sequências (FASTA/PHYLIP) para calcular as distâncias, ou cole uma matriz pronta (CSV/PHYLIP)."></textarea>
+                    <div class="form-group">
+                        <label for="matriz-model">Modelo de distância (para sequências)</label>
+                        <select id="matriz-model">
+                            <option value="JC69">Jukes-Cantor (JC69)</option>
+                            <option value="K2P" selected>Kimura 2-Parâmetros (K2P)</option>
+                            <option value="F84">Felsenstein 1984 (F84)</option>
+                            <option value="LogDet">LogDet / Paralinear</option>
+                            <option value="p-distance">p-distância</option>
+                        </select>
+                    </div>
+                    <button class="btn btn-primary btn-sm" onclick="computeMatrixView('distance')">Calcular matriz de distâncias</button>
+                    <button class="btn btn-secondary btn-sm" onclick="computeMatrixView('character')">Ver matriz de caracteres</button>
+                    <span class="input-helper" id="matriz-msg">A matriz da última árvore construída também aparece aqui.</span>
+                </div>
+                <div class="matriz-output">
+                    <div class="heatmap-container" id="matrix-heatmap-grid">
+                        <span class="muted-note">Cole ou suba dados e clique em “Calcular matriz”.</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ─── Full-screen Estatísticas view ───────────────────────────────────── -->
+    <section class="fullscreen-view" id="view-estatisticas">
+        <div class="fullscreen-inner">
+            <h2 class="view-title">Estatísticas &amp; Frequências</h2>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <label>Frequência de Nucleotídeos</label>
+                    <div class="base-freq-bar-group" id="base-freq-visualizer">
+                        <span class="muted-note">Carregue sequências para calcular...</span>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <label>Estatísticas da Topologia</label>
+                    <div class="stat-card-body">
+                        <div>Nº Táxons: <span class="highlight" id="stat-taxa-count">-</span></div>
+                        <div>Comprimento Total: <span class="highlight" id="stat-total-bl">-</span></div>
+                        <div>Profundidade Máxima: <span class="highlight" id="stat-tree-depth">-</span></div>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <label>Métricas Analíticas</label>
+                    <div class="stat-card-body">
+                        <div>Método: <span class="highlight" id="stat-run-method">-</span></div>
+                        <div>Distância Média: <span class="highlight" id="stat-mean-dist">-</span></div>
+                        <div>Violações do Triângulo: <span class="highlight highlight-warn" id="stat-triangle-violations">-</span></div>
+                    </div>
+                </div>
+                <div class="stat-card" id="card-eval-scores">
+                    <label>Pontuações de Otimização</label>
+                    <div class="stat-card-body">
+                        <div id="div-parsimony">Parsimônia (Fitch): <span class="highlight" id="stat-parsimony-score">-</span></div>
+                        <div id="div-likelihood">Verossimilhança (LogL): <span class="highlight" id="stat-likelihood-score">-</span></div>
+                    </div>
+                </div>
+
+                <div class="stat-card" id="card-support">
+                    <label>Suporte dos Ramos (Bootstrap)</label>
+                    <div class="support-list" id="support-list">
+                        <span class="muted-note">Rode a análise com bootstrap para ver o suporte de cada clado.</span>
+                    </div>
+                </div>
+
+                <div class="stat-card" id="card-ai">
+                    <label>Interpretação por IA</label>
+                    <div class="ai-box">
+                        <p style="font-size:13px;color:var(--text-secondary);margin:0;">Peça uma leitura automática dos resultados (suporte, distâncias e topologia).</p>
+                        <button class="btn btn-primary btn-sm" onclick="askAIInterpretation()">Pedir interpretação à IA</button>
+                        <div class="ai-result" id="ai-result">A interpretação aparecerá aqui.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ─── Documentação ────────────────────────────────────────────────────── -->
+    <div id="docs-overlay" class="docs-overlay" style="display:none;" onclick="if(event.target===this)closeDocs()">
+      <div class="docs-panel">
+        <div class="docs-head">
+          <h2>Documentação</h2>
+          <button class="stylist-close" onclick="closeDocs()" aria-label="Fechar">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          </button>
+        </div>
+        <div class="docs-body">
+
+          <h3>O que é</h3>
+          <p>O MyTrees monta árvores filogenéticas a partir de sequências alinhadas ou de uma matriz de distâncias. O cálculo roda no servidor (Python) e, se ele estiver fora do ar, no próprio navegador.</p>
+
+          <h3>Fluxo básico</h3>
+          <ul>
+            <li>Cole os dados na caixa de texto ou arraste um arquivo para a área de upload.</li>
+            <li>Escolha o <strong>modelo de distância</strong> e o <strong>método de reconstrução</strong> (e, se quiser, o bootstrap).</li>
+            <li>Clique em <strong>Construir Árvore</strong>.</li>
+          </ul>
+          <p>O tipo de entrada é detectado automaticamente — não há seletor de formato.</p>
+
+          <h3>Formatos aceitos</h3>
+          <p>FASTA, PHYLIP (alinhamento ou matriz), CSV (matriz de distâncias) e Newick (árvore pronta).</p>
+          <pre>&gt;Humano
+ATGCTAGGGTTCCTATG
+&gt;Chimpanze
+ATGCTAGGGTTCCTATA</pre>
+          <p>Matriz em CSV, com ou sem cabeçalho:</p>
+          <pre>,Humano,Chimpanze,Gorila
+Humano,0,0.082,0.124
+Chimpanze,0.082,0,0.118
+Gorila,0.124,0.118,0</pre>
+
+          <h3>Modelos de distância</h3>
+          <ul>
+            <li><strong>p-distância</strong> — proporção de sítios diferentes, sem correção.</li>
+            <li><strong>JC69</strong> — Jukes-Cantor, taxas iguais entre bases.</li>
+            <li><strong>K2P</strong> — Kimura 2 parâmetros, separa transições de transversões.</li>
+            <li><strong>F84</strong> — Felsenstein 1984, leva em conta as frequências de bases.</li>
+            <li><strong>LogDet</strong> — útil quando a composição de bases varia entre os táxons.</li>
+          </ul>
+
+          <h3>Métodos de reconstrução</h3>
+          <ul>
+            <li><strong>NJ</strong> (Neighbor Joining) — rápido; o padrão para distâncias.</li>
+            <li><strong>UPGMA / WPGMA</strong> — agrupamento; assumem relógio molecular.</li>
+            <li><strong>Fitch-Margoliash / Evolução Mínima</strong> — critérios de distância sobre a topologia de NJ.</li>
+            <li><strong>Máxima Parcimônia</strong> — minimiza o número de mudanças (algoritmo de Fitch).</li>
+            <li><strong>Máxima Verossimilhança</strong> — otimiza os comprimentos de ramo (pruning de Felsenstein).</li>
+          </ul>
+          <p>MP e ML precisam de sequências; com uma matriz pronta, caem para NJ.</p>
+
+          <h3>Bootstrap</h3>
+          <p>Reamostra as colunas do alinhamento (100, 500 ou 1000 vezes) e anota o suporte de cada ramo. Funciona com os métodos de distância e exige o servidor. Para ver os números, ligue "Valores de Bootstrap" na customização.</p>
+
+          <h3>As abas</h3>
+          <ul>
+            <li><strong>Workspace</strong> — dados de entrada e a árvore.</li>
+            <li><strong>Matriz</strong> — mapa de distâncias (heatmap), com export CSV/PHYLIP/NEXUS.</li>
+            <li><strong>Estatísticas</strong> — frequências de bases, comprimento de ramos, profundidade.</li>
+            <li><strong>Customização</strong> — aparência da árvore, ao lado da própria árvore.</li>
+          </ul>
+
+          <h3>Editar a árvore</h3>
+          <p>Clique num ramo ou nó para selecioná-lo. Em "Estilo &amp; Ações" dá para <strong>Inverter</strong> os filhos, <strong>Colapsar</strong> o clado e <strong>Reenraizar</strong> ali. "Ponto Médio" enraíza pelo ponto médio. As <strong>escalas X/Y</strong> da barra superior esticam a árvore (a área rola).</p>
+
+          <h3>Customização</h3>
+          <ul>
+            <li><strong>Cor de fundo</strong> — entra na imagem exportada.</li>
+            <li><strong>Rótulos</strong> — táxons, bootstrap e comprimento de ramo (fonte, tamanho, cor).</li>
+            <li><strong>Ramo / clado</strong> — cor, espessura e estilo; "Aplicar ao clado inteiro" estende para a subárvore.</li>
+            <li><strong>Pontas</strong> — marcadores nas folhas (círculo ou quadrado, cor, tamanho).</li>
+            <li><strong>Barra de escala</strong> — em filogramas retangulares.</li>
+          </ul>
+
+          <h3>Desfazer</h3>
+          <p>Botão <strong>Desfazer</strong> na barra superior ou <kbd>Ctrl</kbd>+<kbd>Z</kbd>. Reverte estilos, reenraizamento, colapso, cor de fundo, etc.</p>
+
+          <h3>Exportar</h3>
+          <p>Botão <strong>Exportar</strong>: árvore em SVG (vetor), PNG, Newick (.nwk) e NEXUS (.nex). A matriz tem export próprio na aba Matriz (CSV, PHYLIP, NEXUS). A imagem sai com o fundo e a customização atuais.</p>
+
+          <h3>Conta</h3>
+          <p>O acesso exige login. Crie uma conta na primeira vez; a sessão fica salva no navegador. "Início" volta para a página inicial.</p>
+
+        </div>
+      </div>
+    </div>
+
+</body>
+</html>

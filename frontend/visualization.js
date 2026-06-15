@@ -13,18 +13,21 @@
         widthScale: 1.0,
         heightScale: 1.0,
         labelSizeScale: 1.0,
+        backgroundColor: '#ffffff',
+        tipMarkers: { show: false, shape: 'circle', color: '#0f4c64', size: 4 },
+        showScaleBar: false,
         selectedNode: null,
         nodeStyles: new Map(), // node -> { stroke, strokeWidth, strokeDasharray }
         collapsedNodes: new Set(), // Set of TreeNode objects that are collapsed
         labelsConfig: {
             showTaxa: true,
-            taxaColor: '#e2f1f8',
+            taxaColor: '#0f4c64',
             taxaSize: 12,
             taxaFont: 'Inter',
             taxaWeight: '400',
             
             showBootstrap: false,
-            bootstrapColor: '#4eb1b1',
+            bootstrapColor: '#2b9e9e',
             bootstrapSize: 10,
             bootstrapFont: 'IBM Plex Mono',
             bootstrapWeight: '500',
@@ -56,6 +59,43 @@
         this.selectedNode = null;
         this.collapsedNodes.clear();
         this.nodeStyles.clear();
+    };
+
+    // ─── Undo support: capture/restore the full visual state ──────────────────
+    MyTreesViz.snapshot = function() {
+        return {
+            tree: this.tree ? this.tree.clone() : null,
+            nodeStyles: new Map(this.nodeStyles),
+            labelsConfig: JSON.parse(JSON.stringify(this.labelsConfig)),
+            backgroundColor: this.backgroundColor,
+            tipMarkers: JSON.parse(JSON.stringify(this.tipMarkers)),
+            showScaleBar: this.showScaleBar,
+            widthScale: this.widthScale,
+            heightScale: this.heightScale,
+            labelSizeScale: this.labelSizeScale,
+            layout: this.layout,
+            collapsedIds: Array.from(this.collapsedNodes).map(n => n.id)
+        };
+    };
+
+    MyTreesViz.restore = function(snap) {
+        if (!snap) return;
+        this.tree = snap.tree ? snap.tree.clone() : null;
+        if (this.tree) { nodeIndex = 0; assignNodeIds(this.tree); }
+        this.nodeStyles = new Map(snap.nodeStyles);
+        this.labelsConfig = JSON.parse(JSON.stringify(snap.labelsConfig));
+        this.backgroundColor = snap.backgroundColor;
+        if (snap.tipMarkers) this.tipMarkers = JSON.parse(JSON.stringify(snap.tipMarkers));
+        this.showScaleBar = snap.showScaleBar;
+        this.widthScale = snap.widthScale;
+        this.heightScale = snap.heightScale;
+        this.labelSizeScale = snap.labelSizeScale;
+        this.layout = snap.layout;
+        this.selectedNode = null;
+        this.collapsedNodes = new Set();
+        const byId = {};
+        (function walk(n) { if (!n) return; byId[n.id] = n; n.children.forEach(walk); })(this.tree);
+        (snap.collapsedIds || []).forEach(id => { if (byId[id]) MyTreesViz.collapsedNodes.add(byId[id]); });
     };
 
     // Helper: Calculate tree depths and heights for layouts
@@ -367,6 +407,10 @@
     MyTreesViz.calculateCoordinates = function(width, height) {
         if (!this.tree) return;
 
+        // Scale-bar metrics (set for rectangular phylograms below)
+        this._isPhylogram = false;
+        this._pxPerDist = 0;
+
         // Reset details
         const info = computeDepthsAndHeights(this.tree);
         const maxDepth = info.maxDepth;
@@ -385,6 +429,11 @@
 
             const drawWidth = (width - paddingLeft - paddingRight) * this.widthScale;
             const drawHeight = (height - paddingTop - paddingBottom) * this.heightScale;
+
+            // Pixels per unit of evolutionary distance (used by the scale bar).
+            // Only a phylogram maps X to distance; a cladogram maps X to depth.
+            this._isPhylogram = !isCladogram;
+            this._pxPerDist = (maxDist > 0) ? (drawWidth / maxDist) : 0;
 
             let leafIndex = 0;
 
@@ -464,6 +513,10 @@
         const parent = svgElement.parentElement;
         const baseWidth = parent ? parent.clientWidth : 800;
         const baseHeight = parent ? parent.clientHeight : 550;
+        // Aliases used by the circular drawing code below (matches the center
+        // that calculateCoordinates uses). Without these, circular layouts threw
+        // "width is not defined".
+        const width = baseWidth, height = baseHeight;
 
         const scaledWidth = Math.max(baseWidth * this.widthScale, baseWidth);
         const scaledHeight = Math.max(baseHeight * this.heightScale, baseHeight);
@@ -473,6 +526,19 @@
         
         svgElement.setAttribute('viewBox', `0 0 ${scaledWidth} ${scaledHeight}`);
         svgElement.innerHTML = ''; // Clear SVG
+
+        // Background rectangle (also captured by the SVG export)
+        if (this.backgroundColor && this.backgroundColor !== 'transparent') {
+            const bgRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            bgRect.setAttribute('x', '0');
+            bgRect.setAttribute('y', '0');
+            bgRect.setAttribute('width', scaledWidth);
+            bgRect.setAttribute('height', scaledHeight);
+            bgRect.setAttribute('fill', this.backgroundColor);
+            // Let clicks pass through to the SVG so clicking empty space deselects.
+            bgRect.setAttribute('pointer-events', 'none');
+            svgElement.appendChild(bgRect);
+        }
 
         // Recompute positions. We pass the BASE width and height to calculateCoordinates 
         // because it multiplies by widthScale/heightScale internally for the tree paths.
@@ -496,14 +562,14 @@
         // Recursive SVG elements rendering
         function draw(node) {
             const style = self.nodeStyles.get(node.id) || {
-                stroke: '#e2f1f8',
+                stroke: '#0f4c64',
                 strokeWidth: 2,
                 strokeDasharray: 'none'
             };
 
             // Selected node highlight coloring
             const isSelected = (self.selectedNode === node);
-            const activeColor = isSelected ? '#f16e53' : style.stroke;
+            const activeColor = isSelected ? '#f06c53' : style.stroke;
             const activeWidth = isSelected ? style.strokeWidth + 2.5 : style.strokeWidth;
             const activeDash = style.strokeDasharray;
 
@@ -511,12 +577,12 @@
             if (node.children.length > 0 && !self.collapsedNodes.has(node)) {
                 for (const child of node.children) {
                     const childStyle = self.nodeStyles.get(child.id) || {
-                        stroke: '#e2f1f8',
+                        stroke: '#0f4c64',
                         strokeWidth: 2,
                         strokeDasharray: 'none'
                     };
                     const isChildSelected = (self.selectedNode === child);
-                    const branchColor = isChildSelected ? '#f16e53' : childStyle.stroke;
+                    const branchColor = isChildSelected ? '#f06c53' : childStyle.stroke;
                     const branchWidth = isChildSelected ? childStyle.strokeWidth + 2.5 : childStyle.strokeWidth;
                     const branchDash = childStyle.strokeDasharray;
 
@@ -658,8 +724,8 @@
                 let apexY = node.y;
                 let baseX, baseY1, baseY2;
 
-                const style = self.nodeStyles.get(node.id) || { stroke: '#f16e53', strokeWidth: 2 };
-                const triangleColor = isSelected ? '#f16e53' : style.stroke;
+                const style = self.nodeStyles.get(node.id) || { stroke: '#f06c53', strokeWidth: 2 };
+                const triangleColor = isSelected ? '#f06c53' : style.stroke;
                 const fillColor = isSelected ? 'rgba(78, 177, 177, 0.2)' : 'rgba(23, 74, 97, 0.08)';
 
                 if (!self.layout.startsWith('circular')) {
@@ -694,7 +760,7 @@
                     const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
                     label.setAttribute('x', baseX + 10);
                     label.setAttribute('y', node.y + 4);
-                    label.setAttribute('fill', '#e2f1f8');
+                    label.setAttribute('fill', '#0f4c64');
                     label.setAttribute('font-size', '10px');
                     label.setAttribute('font-family', 'Inter');
                     label.setAttribute('font-weight', '600');
@@ -744,7 +810,7 @@
                     const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
                     label.setAttribute('x', labelX);
                     label.setAttribute('y', labelY + 3);
-                    label.setAttribute('fill', '#e2f1f8');
+                    label.setAttribute('fill', '#0f4c64');
                     label.setAttribute('font-size', '9px');
                     label.setAttribute('font-family', 'Inter');
                     label.setAttribute('text-anchor', Math.cos(node.angle) > 0 ? 'start' : 'end');
@@ -759,8 +825,8 @@
                 dot.setAttribute('cx', node.x);
                 dot.setAttribute('cy', node.y);
                 dot.setAttribute('r', isSelected ? '5' : '3.5');
-                dot.setAttribute('fill', isSelected ? '#f16e53' : '#ffffff');
-                dot.setAttribute('stroke', isSelected ? '#f16e53' : '#e2f1f8');
+                dot.setAttribute('fill', isSelected ? '#f06c53' : '#ffffff');
+                dot.setAttribute('stroke', isSelected ? '#f06c53' : '#0f4c64');
                 dot.setAttribute('stroke-width', '1.5');
                 dot.setAttribute('cursor', 'pointer');
                 dot.addEventListener('click', (e) => {
@@ -772,7 +838,27 @@
 
             // ─── Render Text Labels (Leaf names, Bootstrap, Branch length) ───
             const isLeaf = (node.children.length === 0 || self.collapsedNodes.has(node));
-            
+
+            // Tip markers (configurable shape / colour / size)
+            if (isLeaf && self.tipMarkers.show && !self.collapsedNodes.has(node)) {
+                const tm = self.tipMarkers;
+                let marker;
+                if (tm.shape === 'square') {
+                    marker = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                    marker.setAttribute('x', node.x - tm.size);
+                    marker.setAttribute('y', node.y - tm.size);
+                    marker.setAttribute('width', tm.size * 2);
+                    marker.setAttribute('height', tm.size * 2);
+                } else {
+                    marker = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                    marker.setAttribute('cx', node.x);
+                    marker.setAttribute('cy', node.y);
+                    marker.setAttribute('r', tm.size);
+                }
+                marker.setAttribute('fill', tm.color);
+                gNodes.appendChild(marker);
+            }
+
             // 1. Leaf Labels (Taxa names)
             if (isLeaf && self.labelsConfig.showTaxa && node.name && !self.collapsedNodes.has(node)) {
                 const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
@@ -804,9 +890,17 @@
             }
 
             // 2. Node Labels (Bootstrap / Support values)
-            if (self.labelsConfig.showBootstrap && !isLeaf && node.name) {
+            // Support lives in node.metadata.support (set by the backend's
+            // bootstrap_support); fall back to an internal node name only if no
+            // numeric support is present.
+            const supportVal = (node.metadata && node.metadata.support !== undefined && node.metadata.support !== null)
+                ? node.metadata.support
+                : (node.metadata && node.metadata.bootstrap !== undefined && node.metadata.bootstrap !== null
+                    ? node.metadata.bootstrap
+                    : (node.name || null));
+            if (self.labelsConfig.showBootstrap && !isLeaf && supportVal !== null) {
                 const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-                
+
                 if (!self.layout.startsWith('circular')) {
                     text.setAttribute('x', node.x - 8);
                     text.setAttribute('y', node.y - 6);
@@ -821,7 +915,7 @@
                 text.setAttribute('font-size', `${self.labelsConfig.bootstrapSize * self.labelSizeScale}px`);
                 text.setAttribute('font-family', self.labelsConfig.bootstrapFont);
                 text.setAttribute('font-weight', self.labelsConfig.bootstrapWeight);
-                text.textContent = node.name;
+                text.textContent = supportVal;
                 gLabels.appendChild(text);
             }
 
@@ -858,6 +952,11 @@
 
         draw(this.tree);
 
+        // Scale bar (phylograms only — X maps to evolutionary distance)
+        if (this.showScaleBar && this._isPhylogram && this._pxPerDist > 0) {
+            drawScaleBar(svgElement, this._pxPerDist, scaledHeight);
+        }
+
         // Event listener on SVG background to deselect when clicking outside nodes/branches
         svgElement.addEventListener('click', (e) => {
             if (e.target === svgElement) {
@@ -879,17 +978,56 @@
         return `M ${startX} ${startY} A ${radius} ${radius} 0 ${largeArcFlag} 1 ${endX} ${endY}`;
     }
 
+    // ─── Scale bar helpers ────────────────────────────────────────────────────
+    function niceNumber(x) {
+        if (!(x > 0)) return 0;
+        const exp = Math.floor(Math.log10(x));
+        const f = x / Math.pow(10, exp);
+        let nf;
+        if (f < 1.5) nf = 1; else if (f < 3) nf = 2; else if (f < 7) nf = 5; else nf = 10;
+        return nf * Math.pow(10, exp);
+    }
+    function drawScaleBar(svg, pxPerDist, svgHeight) {
+        const ns = 'http://www.w3.org/2000/svg';
+        const dist = niceNumber(120 / pxPerDist);
+        if (!(dist > 0) || !isFinite(dist)) return;
+        const lenPx = dist * pxPerDist;
+        const x0 = 44, y0 = svgHeight - 28;
+        const g = document.createElementNS(ns, 'g');
+        const line = document.createElementNS(ns, 'line');
+        line.setAttribute('x1', x0); line.setAttribute('y1', y0);
+        line.setAttribute('x2', x0 + lenPx); line.setAttribute('y2', y0);
+        line.setAttribute('stroke', '#0f4c64'); line.setAttribute('stroke-width', '2');
+        g.appendChild(line);
+        [x0, x0 + lenPx].forEach(tx => {
+            const t = document.createElementNS(ns, 'line');
+            t.setAttribute('x1', tx); t.setAttribute('y1', y0 - 4);
+            t.setAttribute('x2', tx); t.setAttribute('y2', y0 + 4);
+            t.setAttribute('stroke', '#0f4c64'); t.setAttribute('stroke-width', '2');
+            g.appendChild(t);
+        });
+        const label = document.createElementNS(ns, 'text');
+        label.setAttribute('x', x0 + lenPx / 2); label.setAttribute('y', y0 + 18);
+        label.setAttribute('text-anchor', 'middle');
+        label.setAttribute('fill', '#0f4c64'); label.setAttribute('font-size', '11px');
+        label.setAttribute('font-family', 'IBM Plex Mono, monospace');
+        label.textContent = dist + ' subst./sítio';
+        g.appendChild(label);
+        svg.appendChild(g);
+    }
+
     // ─── Select/Highlight Node & Dispatch Event ───────────────────────────────
     MyTreesViz.selectNode = function(node) {
-        this.selectedNode = node;
-        
+        // Clicking the already-selected branch/node toggles the selection off.
+        this.selectedNode = (node && node === this.selectedNode) ? null : node;
+
         // Redraw to show selection immediately
         const svg = document.getElementById('tree-svg');
         if (svg) this.render(svg);
 
         // Fire callback to notify main UI controller
         if (this.onNodeSelectedCallback) {
-            this.onNodeSelectedCallback(node);
+            this.onNodeSelectedCallback(this.selectedNode);
         }
     };
 
@@ -897,9 +1035,23 @@
     MyTreesViz.updateNodeStyle = function(nodeId, properties) {
         let style = this.nodeStyles.get(nodeId);
         if (!style) {
-            style = { stroke: '#e2f1f8', strokeWidth: 2, strokeDasharray: 'none' };
+            style = { stroke: '#0f4c64', strokeWidth: 2, strokeDasharray: 'none' };
         }
         this.nodeStyles.set(nodeId, { ...style, ...properties });
+
+        const svg = document.getElementById('tree-svg');
+        if (svg) this.render(svg);
+    };
+
+    // Apply a branch style to a whole clade (the node and all its descendants)
+    MyTreesViz.applyStyleToClade = function(node, properties) {
+        if (!node) return;
+        const self = this;
+        (function apply(n) {
+            const base = self.nodeStyles.get(n.id) || { stroke: '#0f4c64', strokeWidth: 2, strokeDasharray: 'none' };
+            self.nodeStyles.set(n.id, { ...base, ...properties });
+            n.children.forEach(apply);
+        })(node);
 
         const svg = document.getElementById('tree-svg');
         if (svg) this.render(svg);
